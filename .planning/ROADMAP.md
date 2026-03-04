@@ -17,7 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: Voice-Character Matching** - Match each character to a real human voice from LibriTTS-P and lock the voice map before synthesis begins (completed 2026-03-03)
 - [x] **Phase 4: TTS Synthesis with Checkpoint/Resume** - Synthesize per-segment WAV files using Chatterbox on Apple Silicon MPS with full crash recovery (completed 2026-03-03)
 - [x] **Phase 5: Audio Assembly and Final Output** - Concatenate WAV segments into chapter and full-book MP3s with ID3 metadata (completed 2026-03-04)
-- [ ] **Phase 6: Integration Fixes and Full Pipeline Wiring** - Fix blocking integration bugs and wire all phases into end-to-end pipeline
+- [x] **Phase 6: Integration Fixes and Full Pipeline Wiring** - Fix blocking integration bugs and wire all phases into end-to-end pipeline (completed 2026-03-04)
 
 ## Phase Details
 
@@ -119,7 +119,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 3. Voice-Character Matching | 3/3 | Complete    | 2026-03-03 |
 | 4. TTS Synthesis with Checkpoint/Resume | 3/3 | Complete    | 2026-03-03 |
 | 5. Audio Assembly and Final Output | 3/3 | Complete    | 2026-03-04 |
-| 6. Integration Fixes and Full Pipeline Wiring | 0/2 | Not Started | — |
+| 6. Integration Fixes and Full Pipeline Wiring | 0/2 | Complete    | 2026-03-04 |
 
 ---
 *Roadmap created: 2026-03-03*
