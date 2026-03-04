@@ -90,5 +90,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-03
-Stopped at: Completed 03-03-PLAN.md — Phase 3 complete
-Resume file: None
+Stopped at: Phase 4 context gathered
+Resume file: .planning/phases/04-tts-synthesis-with-checkpoint-resume/04-CONTEXT.md
