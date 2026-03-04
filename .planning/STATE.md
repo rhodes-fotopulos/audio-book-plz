@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-03-04)
 
 **Core value:** Feed in an EPUB, get out a multi-voice audiobook where each character has a distinct, fitting voice cloned from a real human recording.
-**Current focus:** Phase 8 — LLM Intelligence and Emotion (v1.1)
+**Current focus:** Phase 9 — Production Polish (v1.1)
 
 ## Current Position
 
-Phase: 8 of 9 (LLM Intelligence and Emotion)
+Phase: 9 of 9 (Production Polish)
 Plan: 0 of ? in current phase
-Status: Context gathered — ready for planning
-Last activity: 2026-03-04 — Phase 8 context gathered
+Status: Phase 8 complete — ready for Phase 9 planning
+Last activity: 2026-03-04 — Phase 8 executed (3 plans, 2 waves)
 
-Progress: [██████████████████████░░░░░░░░] 17/17 v1.0 plans complete | v1.1: 3/3 Phase 7 done
+Progress: [██████████████████████████░░░░] 17/17 v1.0 plans complete | v1.1: 6/6 Phase 7+8 done
 
 ## Performance Metrics
 
@@ -25,7 +25,8 @@ Progress: [██████████████████████░
 
 **v1.1:**
 - Phase 7: 3 plans executed in 2 waves (1 session)
-- Total: 3/3 plans complete
+- Phase 8: 3 plans executed in 2 waves (1 session)
+- Total: 6/6 plans complete
 
 ## Accumulated Context
 
@@ -50,5 +51,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-04
-Stopped at: Phase 8 context gathered
-Resume file: .planning/phases/08-llm-intelligence-and-emotion/08-CONTEXT.md
+Stopped at: Phase 8 execution complete, ready for Phase 9
+Resume file: .planning/ROADMAP.md

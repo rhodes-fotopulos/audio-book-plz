@@ -24,7 +24,7 @@
 **Milestone Goal:** Upgrade the audiobook pipeline with Qwen3-TTS (MLX native), emotional narration control, improved dialogue detection, and professional post-processing to close the gap between "working prototype" and "listenable audiobook."
 
 - [x] **Phase 7: TTS Engine Swap** — Replace Chatterbox with Qwen3-TTS 1.7B via mlx-audio for better voice cloning, larger chunks, and Apple Silicon native inference
-- [ ] **Phase 8: LLM Intelligence and Emotion** — Upgrade LLM to 14B, add hybrid dialogue detection with speech-act tagging, and build three-layer emotion system
+- [x] **Phase 8: LLM Intelligence and Emotion** — Upgrade LLM to 14B, add hybrid dialogue detection with speech-act tagging, and build three-layer emotion system
 - [ ] **Phase 9: Production Polish** — Randomized pauses, professional post-processing chain, voice consistency verification, and ACX-grade export
 
 ## Phase Details
@@ -58,9 +58,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 08-01-PLAN.md — LLM model upgrade (14B/8B) + keep-alive management + model lifecycle (Wave 1)
-- [ ] 08-02-PLAN.md — Hybrid dialogue detection with speech-act tagging + voice baseline extraction (Wave 1)
-- [ ] 08-03-PLAN.md — Three-layer emotion system (scene mood + line overrides) + post-processing integration (Wave 2)
+- [x] 08-01-PLAN.md — LLM model upgrade (14B/8B) + keep-alive management + model lifecycle (Wave 1)
+- [x] 08-02-PLAN.md — Hybrid dialogue detection with speech-act tagging + voice baseline extraction (Wave 1)
+- [x] 08-03-PLAN.md — Three-layer emotion system (scene mood + line overrides) + post-processing integration (Wave 2)
 
 ### Phase 9: Production Polish
 **Goal**: Assembled audiobooks sound professionally mastered with natural pause timing, clean audio processing, verified voice consistency, and ACX-compliant export format
@@ -92,9 +92,9 @@ Phases execute in numeric order: 7 -> 8 -> 9
 | 5. Audio Assembly | v1.0 | 3/3 | Complete | 2026-03-04 |
 | 6. Integration Fixes | v1.0 | 2/2 | Complete | 2026-03-04 |
 | 7. TTS Engine Swap | v1.1 | 3/3 | Complete | 2026-03-04 |
-| 8. LLM Intelligence and Emotion | v1.1 | 0/3 | Planned | - |
+| 8. LLM Intelligence and Emotion | v1.1 | 3/3 | Complete | 2026-03-04 |
 | 9. Production Polish | v1.1 | 0/? | Not started | - |
 
 ---
 *Roadmap created: 2026-03-03*
-*Last updated: 2026-03-04 after Phase 7 execution*
+*Last updated: 2026-03-04 after Phase 8 execution*
