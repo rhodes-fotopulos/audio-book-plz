@@ -55,6 +55,12 @@ and dialogue style
 - description: One-sentence character summary
 - is_named: true if character has a proper name, false if referred to by \
 description only (e.g. "the bartender")
+- voice_baseline: Default speaking style with 5 fields:
+  - pace: How fast they typically speak (e.g. "measured", "rapid", "languid", "clipped")
+  - tone: Quality of their voice (e.g. "warm", "gravelly", "melodic", "flat", "breathy")
+  - energy: How animated they are (e.g. "restrained", "animated", "intense", "subdued")
+  - typical_emotion: Default emotional register (e.g. "sardonic", "cheerful", "weary")
+  - description: One-sentence voice summary (e.g. "A slow, gravelly voice with weary patience")
 
 Rules:
 - Extract EVERY character who speaks or is mentioned by name, no matter how minor
@@ -62,6 +68,7 @@ Rules:
 with is_named=false
 - Infer voice qualities from context: "the old man grumbled" implies elderly \
 male, low pitch, slow pace, gruff tone
+- Infer voice_baseline from dialogue style, narration descriptions, and personality
 - Include character relationships when evident from text
 - When unsure about a trait, use "unknown" — do not guess without textual evidence"""
 

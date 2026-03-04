@@ -22,11 +22,13 @@ from src.attribution.llm_client import (
     unload_model,
 )
 from src.attribution.merger import merge_characters
+from src.attribution.speech_acts import classify_speech_acts
 
 __all__ = [
     "extract_all_characters",
     "merge_characters",
     "attribute_all_segments",
+    "classify_speech_acts",
     "select_model",
     "preload_model",
     "get_active_model",

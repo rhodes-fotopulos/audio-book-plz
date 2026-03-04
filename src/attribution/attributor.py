@@ -25,6 +25,7 @@ from src.attribution.models import (
     CharacterProfile,
     ChapterAttributionResult,
 )
+from src.attribution.speech_acts import classify_speech_acts
 
 logger = logging.getLogger(__name__)
 
@@ -63,8 +64,8 @@ Rules:
 - For dialogue segments: Identify the speaker from the character registry. \
 Use the canonical name from the registry.
 - For narration, chapter headings, and scene breaks: Set speaker to "narrator".
-- Internal monologue and thoughts: Set speaker to "narrator" \
-(narrator reads all non-spoken text).
+- Internal monologue and thoughts: Set speaker to the CHARACTER \
+who is thinking (not narrator). These will be tagged as "thought" speech-act.
 - Group dialogue ("they all shouted"): Set speaker to "narrator".
 - When a dialogue line has no explicit tag ("said X"), infer the speaker from:
   1. Turn-taking pattern (alternating speakers in conversation)
@@ -404,6 +405,9 @@ def attribute_all_segments(
             chapter_num,
             cache_dir,
         )
+
+        # Run speech-act classification after attribution
+        classify_speech_acts(chapters[chapter_num], chapter_num)
 
         if progress_callback:
             progress_callback(chapter_num, total)
