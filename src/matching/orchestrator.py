@@ -61,7 +61,7 @@ def run_matching(
         rprint("[cyan]Using existing voice_map.json (delete to re-match)[/cyan]")
         with open(voice_map_path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        return VoiceMap(**data)
+        return VoiceMap.model_validate(data)
 
     # --- Step 2: Load inputs ---
     rprint("[bold cyan]Loading characters and segments...[/bold cyan]")
@@ -71,7 +71,7 @@ def run_matching(
 
     with open(characters_path, "r", encoding="utf-8") as f:
         characters_data = json.load(f)
-    characters = [CharacterProfile(**c) for c in characters_data]
+    characters = [CharacterProfile.model_validate(c) for c in characters_data]
 
     with open(attributed_path, "r", encoding="utf-8") as f:
         segments = json.load(f)

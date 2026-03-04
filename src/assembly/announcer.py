@@ -39,14 +39,17 @@ def generate_announcements(
     Returns:
         Dict mapping chapter_num -> Path to announcement WAV file.
 
-    Raises:
-        FileNotFoundError: If narrator_ref_path does not exist.
+    Returns:
+        Empty dict if narrator reference clip is placeholder or missing.
     """
-    if not narrator_ref_path.exists():
-        raise FileNotFoundError(
-            f"Narrator reference clip not found: {narrator_ref_path}\n"
-            "Ensure voice_map.json has a valid narrator clip path."
+    # Check for known placeholder pattern (from matching without --libritts-audio)
+    if str(narrator_ref_path).startswith("AUDIO_DIR/") or not narrator_ref_path.exists():
+        logger.warning(
+            "Narrator reference clip not found: %s — skipping chapter announcements. "
+            "Provide --libritts-audio to enable announcements.",
+            narrator_ref_path,
         )
+        return {}
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
