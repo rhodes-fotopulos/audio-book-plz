@@ -103,7 +103,9 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Phase 5 announcer handles missing/placeholder narrator clip_path gracefully instead of crashing
   4. `python main.py convert book.epub` runs all 5 phases end-to-end (no stubs) and produces audiobook.mp3
   5. epub_path is threaded through the full pipeline so Phase 5 can extract metadata for ID3 tags
-**Plans**: TBD
+**Plans**: 2 plans
+- [ ] 06-01-PLAN.md — Fix WAV path mismatch, announcer placeholder crash, model_validate best practice
+- [ ] 06-02-PLAN.md — Wire run_full_pipeline to call all 5 phases, convert CLI options, epub_path threading
 
 ## Progress
 
@@ -117,8 +119,8 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 3. Voice-Character Matching | 3/3 | Complete    | 2026-03-03 |
 | 4. TTS Synthesis with Checkpoint/Resume | 3/3 | Complete    | 2026-03-03 |
 | 5. Audio Assembly and Final Output | 3/3 | Complete    | 2026-03-04 |
-| 6. Integration Fixes and Full Pipeline Wiring | 0/0 | Not Started | — |
+| 6. Integration Fixes and Full Pipeline Wiring | 0/2 | Not Started | — |
 
 ---
 *Roadmap created: 2026-03-03*
-*Last updated: 2026-03-04 after gap closure phase added from milestone audit*
+*Last updated: 2026-03-04 after Phase 6 plans created from gap closure*
