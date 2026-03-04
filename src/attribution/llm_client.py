@@ -1,13 +1,17 @@
 """Ollama LLM client wrapper for structured output.
 
-Provides a single entry point for all LLM calls in Phase 2:
+Provides a single entry point for all LLM calls in the attribution pipeline:
+- Intelligent model selection (14B preferred, 8B fallback based on available RAM)
+- Model lifecycle management (preload with keep_alive=-1, explicit unload)
 - Structured JSON output via Pydantic schema + Ollama format parameter
 - Automatic retry logic (up to 3 attempts)
 - Qwen3 /no_think mode for faster structured responses
-- Model unloading for memory management
 - Token estimation for context window budgeting
 
 All LLM calls in the attribution package go through call_llm_structured().
+
+Note: For 14B on 16GB machines, set OLLAMA_KV_CACHE_TYPE=q8_0 environment
+variable to halve KV cache memory usage with minimal quality impact.
 """
 
 from __future__ import annotations
@@ -15,6 +19,7 @@ from __future__ import annotations
 import logging
 from typing import TypeVar
 
+import psutil
 from ollama import chat as ollama_chat
 from pydantic import BaseModel, ValidationError
 
@@ -24,11 +29,24 @@ logger = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-MODEL = "qwen3:8b"
-"""Ollama model name for Qwen3 8B."""
+MODEL_14B = "qwen3:14b"
+"""Ollama model name for Qwen3 14B Q4_K_M (preferred)."""
+
+MODEL_8B = "qwen3:8b"
+"""Ollama model name for Qwen3 8B Q8_0 (fallback)."""
+
+DEFAULT_MODEL = MODEL_14B
+"""Default model to attempt when no override is specified."""
+
+RAM_THRESHOLD_GB = 12.0
+"""Minimum available RAM (GB) to use 14B model.
+
+14B Q4_K_M weights ~10GB + KV cache q8_0 ~2GB = ~12GB.
+Below this threshold, fall back to 8B to avoid swap thrashing.
+"""
 
 CONTEXT_WINDOW = 32768
-"""Explicit num_ctx — Ollama defaults to 2048 without this."""
+"""Explicit num_ctx -- Ollama defaults to 2048 without this."""
 
 MAX_RESPONSE_TOKENS = 4096
 """Maximum tokens for LLM response (num_predict)."""
@@ -40,6 +58,109 @@ NOTHINK_SUFFIX = " /no_think"
 """Appended to system prompts to disable Qwen3 thinking mode."""
 
 T = TypeVar("T", bound=BaseModel)
+
+# ---------------------------------------------------------------------------
+# Module-level state
+# ---------------------------------------------------------------------------
+
+_active_model: str | None = None
+"""Currently loaded/selected model. Set by select_model() or preload_model()."""
+
+
+# ---------------------------------------------------------------------------
+# Model selection and lifecycle
+# ---------------------------------------------------------------------------
+
+
+def select_model(override: str | None = None) -> str:
+    """Select the best LLM model based on available RAM or user override.
+
+    Args:
+        override: If not None, use this model name directly (user forced).
+
+    Returns:
+        Model name string for Ollama (e.g., "qwen3:14b" or "qwen3:8b").
+    """
+    global _active_model
+
+    if override is not None:
+        _active_model = override
+        logger.info("Model override: %s", override)
+        return override
+
+    available_gb = psutil.virtual_memory().available / (1024 ** 3)
+
+    if available_gb >= RAM_THRESHOLD_GB:
+        _active_model = MODEL_14B
+        logger.info(
+            "Available RAM %.1f GB >= %.1f GB threshold -- using %s",
+            available_gb,
+            RAM_THRESHOLD_GB,
+            MODEL_14B,
+        )
+        return MODEL_14B
+    else:
+        _active_model = MODEL_8B
+        logger.warning(
+            "Available RAM %.1f GB below %.1f GB threshold -- "
+            "falling back to %s (attribution quality may be reduced)",
+            available_gb,
+            RAM_THRESHOLD_GB,
+            MODEL_8B,
+        )
+        return MODEL_8B
+
+
+def preload_model(model: str | None = None) -> str:
+    """Preload model into Ollama with infinite keep_alive.
+
+    Sends an empty request with keep_alive=-1 to load the model into
+    memory and keep it resident until explicit unload. This avoids
+    the 5-minute default timeout between LLM phases.
+
+    Args:
+        model: Model name to preload. If None, auto-selects via select_model().
+
+    Returns:
+        The model name that was preloaded.
+    """
+    global _active_model
+
+    if model is None:
+        model = select_model()
+
+    try:
+        ollama_chat(
+            model=model,
+            messages=[],
+            keep_alive=-1,
+        )
+        _active_model = model
+        logger.info(
+            "Model %s preloaded with keep_alive=-1 (resident until explicit unload)",
+            model,
+        )
+    except Exception as e:
+        logger.warning("Could not preload model %s: %s", model, e)
+        _active_model = model  # Still set as active even if preload fails
+
+    return model
+
+
+def get_active_model() -> str:
+    """Return the currently active model, selecting one if needed.
+
+    Returns:
+        Model name string. Uses cached _active_model if set,
+        otherwise calls select_model() to choose based on RAM.
+    """
+    global _active_model
+
+    if _active_model is not None:
+        return _active_model
+
+    return select_model()
+
 
 # ---------------------------------------------------------------------------
 # Core LLM call
@@ -54,9 +175,10 @@ def call_llm_structured(
 ) -> T | None:
     """Call Ollama with structured output and retry logic.
 
-    Sends a chat request to Qwen3 8B with the Pydantic model's JSON schema
-    as the format constraint. Ollama uses grammar-constrained decoding to
-    guarantee valid JSON output matching the schema.
+    Sends a chat request to the active Qwen3 model with the Pydantic
+    model's JSON schema as the format constraint. Ollama uses
+    grammar-constrained decoding to guarantee valid JSON output
+    matching the schema.
 
     Args:
         system_prompt: System message for the LLM (gets /no_think appended).
@@ -67,12 +189,13 @@ def call_llm_structured(
     Returns:
         Validated Pydantic model instance, or None if all retries fail.
     """
+    model = get_active_model()
     full_system_prompt = system_prompt + NOTHINK_SUFFIX
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             response = ollama_chat(
-                model=MODEL,
+                model=model,
                 messages=[
                     {"role": "system", "content": full_system_prompt},
                     {"role": "user", "content": user_content},
@@ -83,6 +206,7 @@ def call_llm_structured(
                     "num_ctx": num_ctx,
                     "num_predict": MAX_RESPONSE_TOKENS,
                 },
+                keep_alive=-1,
             )
             result = schema_class.model_validate_json(response.message.content)
             return result
@@ -104,15 +228,22 @@ def call_llm_structured(
 # ---------------------------------------------------------------------------
 
 
-def unload_model(model: str = MODEL) -> None:
+def unload_model(model: str | None = None) -> None:
     """Explicitly unload model from Ollama to free memory.
 
     Sends a request with keep_alive=0 to immediately evict the model
-    from GPU/RAM. Important at the Phase 2/3 boundary so Ollama releases
-    memory before Chatterbox TTS loads in Phase 4.
+    from GPU/RAM. Important at phase boundaries so Ollama releases
+    memory before TTS engines load.
 
-    Silently handles connection errors (Ollama might not be running).
+    Args:
+        model: Model name to unload. If None, unloads the active model
+            or DEFAULT_MODEL as fallback.
     """
+    global _active_model
+
+    if model is None:
+        model = _active_model or DEFAULT_MODEL
+
     try:
         ollama_chat(
             model=model,
@@ -122,6 +253,8 @@ def unload_model(model: str = MODEL) -> None:
         logger.info("Model %s unloaded from Ollama", model)
     except Exception as e:
         logger.debug("Could not unload model %s: %s", model, e)
+
+    _active_model = None
 
 
 # ---------------------------------------------------------------------------
