@@ -72,11 +72,12 @@ Plans:
   3. Final export is 44.1kHz 192kbps CBR MP3 meeting ACX loudness and peak specifications
   4. Same-speaker segments are compared via speaker embeddings, and outliers beyond cosine threshold (starting at 0.60) are regenerated up to 3 times — the best attempt is kept, preventing voice drift within a character
   5. Segment boundaries use 5-10ms fade-in/fade-out crossfades instead of hard silence cuts, eliminating audible clicks at joins
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 09-01: TBD
-- [ ] 09-02: TBD
+- [ ] 09-01-PLAN.md — Gaussian pauses + crossfades + pedalboard mastering effects chain (Wave 1)
+- [ ] 09-02-PLAN.md — Voice consistency verification with Resemblyzer speaker embeddings (Wave 1)
+- [ ] 09-03-PLAN.md — ACX export (44.1kHz 192kbps) + file naming + CLI flags + pipeline wiring (Wave 2)
 
 ## Progress
 
@@ -93,7 +94,7 @@ Phases execute in numeric order: 7 -> 8 -> 9
 | 6. Integration Fixes | v1.0 | 2/2 | Complete | 2026-03-04 |
 | 7. TTS Engine Swap | v1.1 | 3/3 | Complete | 2026-03-04 |
 | 8. LLM Intelligence and Emotion | v1.1 | 3/3 | Complete | 2026-03-04 |
-| 9. Production Polish | v1.1 | 0/? | Not started | - |
+| 9. Production Polish | v1.1 | 0/3 | Planning complete | - |
 
 ---
 *Roadmap created: 2026-03-03*
