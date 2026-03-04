@@ -62,6 +62,32 @@ class Relationship(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class VoiceBaseline(BaseModel):
+    """Default speaking style for a character (3-5 descriptors).
+
+    Used by the emotion system (Phase 8+) to establish each character's
+    baseline vocal qualities. The three-layer emotion system uses this as
+    layer 1 (character default) before applying scene mood and line overrides.
+    """
+
+    model_config = ConfigDict(strict=True)
+
+    pace: str
+    """Speaking pace: e.g. 'measured', 'rapid', 'languid', 'clipped'."""
+
+    tone: str
+    """Vocal tone: e.g. 'warm', 'gravelly', 'melodic', 'flat', 'breathy'."""
+
+    energy: str
+    """Energy level: e.g. 'restrained', 'animated', 'intense', 'subdued'."""
+
+    typical_emotion: str
+    """Default emotional register: e.g. 'sardonic', 'cheerful', 'weary'."""
+
+    description: str
+    """One-sentence summary: 'A slow, gravelly voice with weary patience'."""
+
+
 class CharacterProfile(BaseModel):
     """A character extracted from novel text.
 
@@ -98,6 +124,9 @@ class CharacterProfile(BaseModel):
 
     is_named: bool
     """True for named characters ("Mr. Darcy"), False for unnamed ("the bartender")."""
+
+    voice_baseline: VoiceBaseline | None = None
+    """Default speaking style (Phase 8+). None for backward compatibility."""
 
 
 # ---------------------------------------------------------------------------
@@ -140,6 +169,9 @@ class SegmentAttribution(BaseModel):
 
     reasoning: str
     """Brief explanation of why this speaker was chosen (for debugging)."""
+
+    speech_act: str = "spoken"
+    """Speech-act subtype: 'spoken', 'thought', 'shouted', 'whispered'."""
 
 
 class ChapterAttributionResult(BaseModel):
@@ -187,3 +219,43 @@ class AttributedSegment(BaseModel):
 
     confidence: float
     """Confidence score 0.0-1.0 for this attribution."""
+
+    speech_act: str = "spoken"
+    """Speech-act subtype: 'spoken', 'thought', 'shouted', 'whispered'."""
+
+
+# ---------------------------------------------------------------------------
+# LLM response schemas — speech-act classification
+# ---------------------------------------------------------------------------
+
+
+class SpeechActTag(BaseModel):
+    """Classification result for a single segment's speech-act.
+
+    Part of SpeechActResult returned by the LLM during hybrid
+    speech-act classification.
+    """
+
+    model_config = ConfigDict(strict=True)
+
+    segment_id: int
+    """ID of the segment being classified."""
+
+    speech_act: str
+    """Speech-act subtype: 'spoken', 'thought', 'shouted', 'whispered'."""
+
+    confidence: float
+    """Confidence score 0.0-1.0 for this classification."""
+
+    reasoning: str
+    """Brief explanation of why this speech-act was chosen."""
+
+
+class SpeechActResult(BaseModel):
+    """LLM response schema for speech-act classification of segments.
+
+    Passed to Ollama's format parameter via model_json_schema().
+    The LLM returns speech-act tags for dialogue segments.
+    """
+
+    tags: list[SpeechActTag]
