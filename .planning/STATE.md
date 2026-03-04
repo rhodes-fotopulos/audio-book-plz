@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-03-03)
 
 **Core value:** Feed in an EPUB, get out a multi-voice audiobook where each character has a distinct, fitting voice cloned from a real human recording.
-**Current focus:** Phase 5 — Audio Assembly and Final Output COMPLETE (all phases done)
+**Current focus:** Phase 6 — Integration Fixes and Full Pipeline Wiring (gap closure)
 
 ## Current Position
 
-Phase: 5 of 5 (Audio Assembly and Final Output) — COMPLETE
-Plan: 3 of 3 in current phase — all plans complete
-Status: ALL PHASES COMPLETE — full pipeline operational
-Last activity: 2026-03-04 — Plan 05-03 complete (CLI assemble command, pipeline integration)
+Phase: 6 of 6 (Integration Fixes and Full Pipeline Wiring)
+Plan: 1 of 2 in current phase — Plan 06-01 complete
+Status: Executing Phase 6 gap closure
+Last activity: 2026-03-04 — Plan 06-01 complete (WAV path fix, announcer fix, model_validate)
 
-Progress: [████████████████████] 100%
+Progress: [█████████████████░░░] 88%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 15
+- Total plans completed: 16
 - Average duration: 3 min
-- Total execution time: 0.72 hours
+- Total execution time: 0.77 hours
 
 **By Phase:**
 
@@ -32,9 +32,10 @@ Progress: [████████████████████] 100%
 | 03-voice-character-matching | 3 | 13 min | 4 min |
 | 04-tts-synthesis-with-checkpoint-resume | 3 | 12 min | 4 min |
 | 05-audio-assembly-and-final-output | 3 | 11 min | 4 min |
+| 06-integration-fixes-and-full-pipeline-wiring | 1 | 3 min | 3 min |
 
 **Recent Trend:**
-- Last 5 plans: 04-02 (4 min), 04-03 (4 min), 05-01 (3 min), 05-02 (3 min), 05-03 (5 min)
+- Last 5 plans: 04-03 (4 min), 05-01 (3 min), 05-02 (3 min), 05-03 (5 min), 06-01 (3 min)
 - Trend: stable
 
 *Updated after each plan completion*
@@ -98,6 +99,8 @@ Recent decisions affecting current work:
 - Plan 05-03: Genre always set to "Audiobook" for ID3 tags
 - Plan 05-03: Late import of run_assembly in pipeline.py to defer torch loading for announcements
 - Plan 05-03: WAV files not cleaned up after assembly per user decision
+- [Phase 06]: Plan 06-01: AUDIO_DIR/ prefix detected as placeholder pattern before file existence check
+- [Phase 06]: Plan 06-01: Announcer returns empty dict (not None) for consistent downstream handling
 
 ### Pending Todos
 
@@ -112,5 +115,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-04
-Stopped at: All 5 phases complete — milestone v1.0 pipeline operational
-Resume file: N/A — project complete
+Stopped at: Completed 06-01-PLAN.md (WAV path fix, announcer fix, model_validate)
+Resume file: .planning/phases/06-integration-fixes-and-full-pipeline-wiring/06-01-SUMMARY.md
