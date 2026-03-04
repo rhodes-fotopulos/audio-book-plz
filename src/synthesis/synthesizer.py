@@ -39,6 +39,7 @@ from src.synthesis.chunker import chunk_text_chatterbox, chunk_text_qwen
 from src.synthesis.engine_base import AudioResult
 from src.synthesis.engine_factory import create_engine
 from src.synthesis.models import SegmentResult, SynthesisConfig, SynthesisStats
+from src.synthesis.post_processor import apply_speech_act_adjustments
 from src.synthesis.progress import SynthesisProgress
 
 logger = logging.getLogger(__name__)
@@ -313,6 +314,22 @@ def run_synthesis(
                         )
                         gen_time = time.monotonic() - gen_start
 
+                        # Apply speech-act post-processing
+                        speech_act = seg.get("speech_act", "spoken")
+                        if speech_act != "spoken":
+                            adj_audio, _ = apply_speech_act_adjustments(
+                                audio_result.audio, audio_result.sample_rate, speech_act
+                            )
+                            audio_result = AudioResult(
+                                audio=adj_audio,
+                                sample_rate=audio_result.sample_rate,
+                                duration_s=len(adj_audio) / audio_result.sample_rate,
+                            )
+                            logger.debug(
+                                "Applied %s adjustments to seg_%04d",
+                                speech_act, seg_id,
+                            )
+
                         saved = engine.save_wav_atomic(audio_result, wav_path)
                         if not saved:
                             raise RuntimeError("WAV duration below minimum threshold")
@@ -361,6 +378,21 @@ def run_synthesis(
                                             ref_transcript, seg_type,
                                         )
                                         gen_time = time.monotonic() - gen_start
+
+                                        # Apply speech-act post-processing
+                                        speech_act = seg.get("speech_act", "spoken")
+                                        if speech_act != "spoken":
+                                            adj_audio, _ = apply_speech_act_adjustments(
+                                                audio_result.audio,
+                                                audio_result.sample_rate,
+                                                speech_act,
+                                            )
+                                            audio_result = AudioResult(
+                                                audio=adj_audio,
+                                                sample_rate=audio_result.sample_rate,
+                                                duration_s=len(adj_audio) / audio_result.sample_rate,
+                                            )
+
                                         saved = engine.save_wav_atomic(
                                             audio_result, wav_path
                                         )
@@ -426,6 +458,20 @@ def run_synthesis(
                             fallback_engine, fb_chunks, ref_clip, None, seg_type
                         )
                         gen_time = time.monotonic() - gen_start
+
+                        # Apply speech-act post-processing
+                        speech_act = seg.get("speech_act", "spoken")
+                        if speech_act != "spoken":
+                            adj_audio, _ = apply_speech_act_adjustments(
+                                audio_result.audio,
+                                audio_result.sample_rate,
+                                speech_act,
+                            )
+                            audio_result = AudioResult(
+                                audio=adj_audio,
+                                sample_rate=audio_result.sample_rate,
+                                duration_s=len(adj_audio) / audio_result.sample_rate,
+                            )
 
                         saved = fallback_engine.save_wav_atomic(
                             audio_result, wav_path
@@ -534,6 +580,21 @@ def run_synthesis(
                         engine, text_chunks, ref_clip, ref_transcript, seg_type
                     )
                     gen_time = time.monotonic() - gen_start
+
+                    # Apply speech-act post-processing
+                    speech_act = seg.get("speech_act", "spoken")
+                    if speech_act != "spoken":
+                        adj_audio, _ = apply_speech_act_adjustments(
+                            audio_result.audio,
+                            audio_result.sample_rate,
+                            speech_act,
+                        )
+                        audio_result = AudioResult(
+                            audio=adj_audio,
+                            sample_rate=audio_result.sample_rate,
+                            duration_s=len(adj_audio) / audio_result.sample_rate,
+                        )
+
                     saved = engine.save_wav_atomic(audio_result, wav_path)
                     if saved:
                         duration = audio_result.duration_s

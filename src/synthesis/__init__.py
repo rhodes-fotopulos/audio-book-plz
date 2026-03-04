@@ -18,6 +18,7 @@ from src.synthesis.chunker import chunk_text_chatterbox, chunk_text_qwen
 from src.synthesis.engine_base import AudioResult, TTSEngineBase
 from src.synthesis.engine_factory import create_engine
 from src.synthesis.models import SegmentResult, SynthesisConfig, SynthesisStats
+from src.synthesis.post_processor import apply_speech_act_adjustments
 from src.synthesis.synthesizer import run_synthesis
 
 __all__ = [
@@ -34,6 +35,8 @@ __all__ = [
     # Text chunking
     "chunk_text_qwen",
     "chunk_text_chatterbox",
+    # Post-processing
+    "apply_speech_act_adjustments",
     # Checkpoint
     "create_checkpoint",
     "save_checkpoint",
