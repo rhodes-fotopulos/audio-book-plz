@@ -30,7 +30,10 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Dialogue is correctly identified for both straight and curly quotation mark variants across representative fiction EPUBs
   4. User can run `python main.py [parse|attribute|match|synthesize|assemble]` to invoke any individual phase from the CLI
   5. User can run `python main.py convert book.epub` to trigger the full end-to-end pipeline with a single command
-**Plans**: TBD
+**Plans**: 3 plans
+- [ ] 01-01-PLAN.md — Project setup, data models, EPUB reader, HTML cleaner
+- [ ] 01-02-PLAN.md — Text segmenter with TDD (dialogue detection, type classification, sentence splitting)
+- [ ] 01-03-PLAN.md — Typer CLI skeleton, pipeline orchestrator, JSON output
 
 ### Phase 2: LLM Character Extraction and Speaker Attribution
 **Goal**: Users can hand the parser output to the LLM phase and get back a character registry and a fully attributed segment file where every dialogue line names its speaker
@@ -83,7 +86,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. EPUB Parsing and CLI Skeleton | 0/TBD | Not started | - |
+| 1. EPUB Parsing and CLI Skeleton | 0/3 | Planned | - |
 | 2. LLM Character Extraction and Speaker Attribution | 0/TBD | Not started | - |
 | 3. Voice-Character Matching | 0/TBD | Not started | - |
 | 4. TTS Synthesis with Checkpoint/Resume | 0/TBD | Not started | - |
@@ -91,4 +94,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 ---
 *Roadmap created: 2026-03-03*
-*Last updated: 2026-03-03 after initial roadmap creation*
+*Last updated: 2026-03-03 after Phase 1 planning*
