@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-03-03)
 
 **Core value:** Feed in an EPUB, get out a multi-voice audiobook where each character has a distinct, fitting voice cloned from a real human recording.
-**Current focus:** Phase 3 — Voice-Character Matching COMPLETE
+**Current focus:** Phase 4 — TTS Synthesis with Checkpoint/Resume COMPLETE
 
 ## Current Position
 
-Phase: 3 of 5 (Voice-Character Matching) — COMPLETE
+Phase: 4 of 5 (TTS Synthesis with Checkpoint/Resume) — COMPLETE
 Plan: 3 of 3 in current phase — all plans complete
-Status: Phase 3 complete — ready to begin Phase 4 (TTS Synthesis with Checkpoint/Resume)
-Last activity: 2026-03-03 — Plan 03-03 complete (Orchestrator, CLI match command, voice_map.json)
+Status: Phase 4 complete — ready to begin Phase 5 (Audio Assembly and Final Output)
+Last activity: 2026-03-03 — Plan 04-03 complete (CLI synthesize command, pipeline integration, dry-run)
 
-Progress: [████████████░░░] 60%
+Progress: [████████████████░░░] 80%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 9
+- Total plans completed: 12
 - Average duration: 3 min
-- Total execution time: 0.38 hours
+- Total execution time: 0.57 hours
 
 **By Phase:**
 
@@ -30,9 +30,10 @@ Progress: [████████████░░░] 60%
 | 01-epub-parsing-and-cli-skeleton | 3 | 7 min | 2 min |
 | 02-llm-character-extraction-and-speaker-attribution | 3 | 7 min | 2 min |
 | 03-voice-character-matching | 3 | 13 min | 4 min |
+| 04-tts-synthesis-with-checkpoint-resume | 3 | 12 min | 4 min |
 
 **Recent Trend:**
-- Last 5 plans: 02-02 (2 min), 02-03 (3 min), 03-01 (3 min), 03-02 (5 min), 03-03 (5 min)
+- Last 5 plans: 03-02 (5 min), 03-03 (5 min), 04-01 (4 min), 04-02 (4 min), 04-03 (4 min)
 - Trend: stable
 
 *Updated after each plan completion*
@@ -76,6 +77,15 @@ Recent decisions affecting current work:
 - Plan 03-03: Embedding pre-ranking limits >50 candidates to top 30 before LLM evaluation
 - Plan 03-03: Re-run caching: existing voice_map.json returned without LLM calls
 - Plan 03-03: sentence-transformers>=3.0 added to project dependencies
+- Plan 04-01: CPU-first model loading with component-wise MPS migration (t3, s3gen, ve) for Chatterbox on Apple Silicon
+- Plan 04-01: Atomic WAV writes via .tmp + os.rename to prevent corruption on crashes
+- Plan 04-01: Checkpoint JSON tracks completed/failed segments with WAV validation on resume
+- Plan 04-02: Failure threshold stops run if >15% segments fail after minimum 20 processed
+- Plan 04-02: Memory cleanup every 15 segments via config.cleanup_interval
+- Plan 04-02: End-of-run retry pass gated by failure threshold (prevents retrying fundamentally broken runs)
+- Plan 04-03: Dry-run estimates: 3s avg audio/segment, 1.5x real-time factor, 48KB/s WAV size
+- Plan 04-03: run_synthesis() imported inside run_synthesize() to defer torch/chatterbox import
+- Plan 04-03: chatterbox-tts>=0.1.6 added to project dependencies
 
 ### Pending Todos
 
@@ -90,5 +100,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-03
-Stopped at: Phase 4 context gathered
-Resume file: .planning/phases/04-tts-synthesis-with-checkpoint-resume/04-CONTEXT.md
+Stopped at: Phase 4 complete — ready for Phase 5
+Resume file: N/A (clean phase boundary)
