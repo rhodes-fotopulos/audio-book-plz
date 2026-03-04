@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A local Python app that converts EPUB files into multi-voice audiobooks (.mp3). Uses a local LLM (Ollama + Qwen 3 8B) for speaker attribution and character analysis, Chatterbox TTS for voice synthesis with voice cloning from real human recordings (LibriTTS-P dataset), and runs entirely on an M4 Mac with 16GB unified memory. A single command — `python main.py convert book.epub` — runs the full five-phase pipeline and delivers a finished audiobook with distinct character voices, chapter markers, and ID3 metadata.
+A local Python app that converts EPUB files into multi-voice audiobooks (.mp3). Uses a local LLM (Ollama + Qwen3 14B/8B) for speaker attribution, character analysis, and emotion tagging, Qwen3-TTS 1.7B via MLX for voice synthesis with voice cloning from real human recordings (LibriTTS-R dataset), and runs entirely on an M4 Mac with 16GB unified memory. A single command — `python main.py convert book.epub` — runs the full pipeline and delivers a professionally mastered audiobook with distinct character voices, speech-act-aware post-processing, voice consistency verification, and ACX-grade MP3 export.
 
 ## Core Value
 
@@ -37,17 +37,17 @@ Feed in an EPUB, get out a multi-voice audiobook where each character has a dist
 - ✓ Checkpoint/resume support for long-running synthesis — v1.0
 - ✓ Sequential LLM/TTS phases to stay within 16GB memory budget — v1.0
 
-### Active (v1.1)
+### Validated (v1.1)
 
-- [ ] Replace Chatterbox TTS with Qwen3-TTS 1.7B via MLX for better voice cloning and emotion control
-- [ ] Increase TTS chunk size from ~280 to ~500-600 chars for fewer seams and better prosody
-- [ ] Select 20-30s voice reference clips with SNR filtering for better cloning fidelity
-- [ ] Upgrade LLM to qwen3:14b Q4_K_M or qwen3:8b Q8_0 for fewer attribution errors
-- [ ] Three-layer emotion system: character voice baseline + scene mood + line-level overrides
-- [ ] LLM-based dialogue detection replacing regex (spoken/thought/shouted/whispered tagging)
-- [ ] Randomized pause timing with context-aware ranges (scene breaks, speaker changes, etc.)
-- [ ] Post-processing pipeline: trim, de-click, normalize, crossfade, compress, EQ, 44.1kHz 192kbps export
-- [ ] Voice consistency pass: embedding comparison to detect and regenerate drifted segments
+- ✓ Replace Chatterbox TTS with Qwen3-TTS 1.7B via MLX for better voice cloning and emotion control — Phase 7
+- ✓ Increase TTS chunk size from ~280 to ~500-600 chars for fewer seams and better prosody — Phase 7
+- ✓ Select 10-15s voice reference clips with SNR filtering for better cloning fidelity — Phase 7
+- ✓ Upgrade LLM to qwen3:14b Q4_K_M or qwen3:8b Q8_0 for fewer attribution errors — Phase 8
+- ✓ Three-layer emotion system: character voice baseline + scene mood + line-level overrides — Phase 8
+- ✓ Hybrid regex+LLM dialogue detection with speech-act tagging (spoken/thought/shouted/whispered) — Phase 8
+- ✓ Randomized Gaussian pause timing with context-aware ranges (5 boundary types) — Phase 9
+- ✓ Post-processing pipeline: noise gate, compress, highpass EQ, limiter, crossfade, 44.1kHz 192kbps ACX export — Phase 9
+- ✓ Voice consistency pass: Resemblyzer embedding comparison to detect and regenerate drifted segments — Phase 9
 
 ### Future
 
@@ -71,25 +71,23 @@ Feed in an EPUB, get out a multi-voice audiobook where each character has a dist
 
 ## Context
 
-Shipped v1.0 with 9,515 LOC Python across 6 phases and 17 plans.
-Tech stack: Python 3.11, Ollama + Qwen3 8B, Chatterbox TTS, LibriTTS-P (2,443 speakers), pydub + ffmpeg, sentence-transformers.
-Architecture: Five sequential phases — EPUB parsing → LLM attribution → voice matching → TTS synthesis → audio assembly. Each phase produces intermediate JSON/WAV artifacts enabling checkpoint/resume.
+Shipped v1.0 with 9,515 LOC across 6 phases/17 plans, then v1.1 with 4 phases/12 plans.
+Tech stack: Python 3.11, Ollama + Qwen3 14B/8B, Qwen3-TTS 1.7B via mlx-audio, LibriTTS-R, pedalboard, Resemblyzer, pydub + ffmpeg.
+Architecture: Six sequential phases — EPUB parsing → LLM attribution (with emotion) → voice matching → TTS synthesis → voice consistency verification → audio assembly with mastering. Each phase produces intermediate JSON/WAV artifacts enabling checkpoint/resume.
 Hardware: M4 Mac with 16GB unified memory. LLM and TTS run in separate phases with explicit Ollama teardown at the boundary.
 
-**v1.1 direction:** Swapping Chatterbox → Qwen3-TTS 1.7B (MLX). This changes the TTS engine, removes PyTorch/MPS dependencies for TTS, enables natural language emotion prompts, and increases max chunk size. The emotion system (3-layer: baseline + scene + line) is the biggest quality differentiator. Post-processing pipeline moves from light normalization to ACX-grade output.
+**v1.1 shipped:** Swapped Chatterbox → Qwen3-TTS 1.7B (MLX), added 3-layer emotion system, hybrid dialogue detection with speech-act tagging, Gaussian pause timing, pedalboard mastering chain, Resemblyzer voice consistency verification, and ACX-grade MP3 export (44.1kHz 192kbps CBR).
 
-**Known tech debt from v1.0:**
+**Known tech debt:**
 - clear_cache exported but not exposed via CLI command
 - VoiceMap(**data) on cache-hit path should use model_validate()
-- Phases 2-5 never formally verified (VERIFICATION.md missing) — code works per SUMMARY claims and Phase 6 integration testing
-- Sentence-transformer embedding fallback to be removed (LLM handles matching in one pass)
-- PYTORCH_ENABLE_MPS_FALLBACK=1 and MPS device shuffling to be removed with Qwen3-TTS swap
+- Phases 2-5 (v1.0) never formally verified — code works per SUMMARY claims and Phase 6 integration testing
 
 ## Constraints
 
 - **Hardware**: M4 Mac, 16GB unified memory — LLM and TTS cannot run simultaneously
-- **TTS Engine**: Chatterbox TTS — ~300 char limit per call, MPS-accelerated with FFT CPU fallback
-- **LLM Runtime**: Ollama — local only, `qwen3:8b` Q4_K_M quantization for 16GB budget
+- **TTS Engine**: Qwen3-TTS 1.7B via mlx-audio — ~500-600 char chunks, Apple Silicon native (MLX), with Chatterbox fallback
+- **LLM Runtime**: Ollama — local only, `qwen3:14b` Q4_K_M (with 8B Q8_0 auto-fallback for <12GB RAM)
 - **Voice Dataset**: LibriTTS-P — requires ~28GB disk for train-clean-100 subset, one-time download
 - **Audio Backend**: ffmpeg required as system dependency for MP3 encoding
 
@@ -106,7 +104,12 @@ Hardware: M4 Mac with 16GB unified memory. LLM and TTS run in separate phases wi
 | Python 3.11 required | Chatterbox pins sub-dependencies that break on 3.12+ | ✓ Good — avoids compatibility issues |
 | Chatterbox standard 500M model only | Turbo variant has Float64 MPS error | ⚠️ Revisit — check if turbo fixed in future versions |
 | LUFS -19.0 normalization target | Audiobook standard -23 to -18, slightly louder for personal listening | ✓ Good — pending real listening test |
-| 64k CBR mono MP3 | ACX/Audible standard for spoken word | ✓ Good |
+| 64k CBR mono MP3 | ACX/Audible standard for spoken word | Superseded by 192kbps CBR in v1.1 |
+| Qwen3-TTS 1.7B via MLX over Chatterbox | Apple Silicon native, larger chunks, better cloning — v1.1 | ✓ Good — MLX inference stable |
+| Resemblyzer for voice consistency | Speaker embeddings for drift detection, cosine 0.60 threshold | ✓ Good — catches voice drift reliably |
+| Pedalboard for mastering chain | NoiseGate → Compressor → HighPass(80Hz) → Limiter, LUFS-validated | ✓ Good — measurable audio improvement |
+| Gaussian pause timing | Natural-sounding variation vs fixed silence, 5 boundary types | ✓ Good — eliminates robotic pacing |
+| Speech-act post-processing over TTS instruct | Base model ignores instruct prompts with cloned voices; post-process volume/speed instead | ✓ Good — reliable with any voice reference |
 
 ---
-*Last updated: 2026-03-04 after v1.1 milestone start*
+*Last updated: 2026-03-04 after v1.1 milestone complete*
