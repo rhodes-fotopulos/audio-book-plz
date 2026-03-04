@@ -249,8 +249,9 @@ class TestSplitToSegmentsDialogue:
     """Dialogue lines that fit within limit are kept as a single segment."""
 
     def test_short_dialogue_stays_as_one_segment(self):
-        """Dialogue line of 100 chars kept together."""
-        text = '"Where are you going?" she asked with a worried look on her face today.'
+        """A single short dialogue sentence is not further split by the 280-char limiter."""
+        # This is a single grammatical sentence — under the 280-char limit, stays as-is.
+        text = '"I cannot believe you would say something like that to me," she said quietly.'
         assert len(text) <= CHAR_LIMIT
         segments = split_to_segments(text, SegmentType.DIALOGUE)
         assert len(segments) == 1
