@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-03-03)
 
 **Core value:** Feed in an EPUB, get out a multi-voice audiobook where each character has a distinct, fitting voice cloned from a real human recording.
-**Current focus:** Phase 4 — TTS Synthesis with Checkpoint/Resume COMPLETE
+**Current focus:** Phase 5 — Audio Assembly and Final Output COMPLETE (all phases done)
 
 ## Current Position
 
-Phase: 4 of 5 (TTS Synthesis with Checkpoint/Resume) — COMPLETE
+Phase: 5 of 5 (Audio Assembly and Final Output) — COMPLETE
 Plan: 3 of 3 in current phase — all plans complete
-Status: Phase 4 complete — ready to begin Phase 5 (Audio Assembly and Final Output)
-Last activity: 2026-03-03 — Plan 04-03 complete (CLI synthesize command, pipeline integration, dry-run)
+Status: ALL PHASES COMPLETE — full pipeline operational
+Last activity: 2026-03-04 — Plan 05-03 complete (CLI assemble command, pipeline integration)
 
-Progress: [████████████████░░░] 80%
+Progress: [████████████████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 12
+- Total plans completed: 15
 - Average duration: 3 min
-- Total execution time: 0.57 hours
+- Total execution time: 0.72 hours
 
 **By Phase:**
 
@@ -31,9 +31,10 @@ Progress: [████████████████░░░] 80%
 | 02-llm-character-extraction-and-speaker-attribution | 3 | 7 min | 2 min |
 | 03-voice-character-matching | 3 | 13 min | 4 min |
 | 04-tts-synthesis-with-checkpoint-resume | 3 | 12 min | 4 min |
+| 05-audio-assembly-and-final-output | 3 | 11 min | 4 min |
 
 **Recent Trend:**
-- Last 5 plans: 03-02 (5 min), 03-03 (5 min), 04-01 (4 min), 04-02 (4 min), 04-03 (4 min)
+- Last 5 plans: 04-02 (4 min), 04-03 (4 min), 05-01 (3 min), 05-02 (3 min), 05-03 (5 min)
 - Trend: stable
 
 *Updated after each plan completion*
@@ -86,6 +87,17 @@ Recent decisions affecting current work:
 - Plan 04-03: Dry-run estimates: 3s avg audio/segment, 1.5x real-time factor, 48KB/s WAV size
 - Plan 04-03: run_synthesis() imported inside run_synthesize() to defer torch/chatterbox import
 - Plan 04-03: chatterbox-tts>=0.1.6 added to project dependencies
+- Plan 05-01: Silence spacing: sentence=400ms, paragraph=900ms, scene_break=2500ms, chapter=1500ms, post-announcement=800ms
+- Plan 05-01: Anti-truncation padding: 100ms silence appended before MP3 export to prevent pydub end-truncation bug
+- Plan 05-01: pydub>=0.25.1, pyloudnorm>=0.2.0, mutagen>=1.47.0 added to project dependencies
+- Plan 05-02: LUFS normalization target -19.0 (audiobook standard range -23 to -18, slightly louder for personal listening)
+- Plan 05-02: Minimum 400ms audio for valid LUFS measurement; shorter audio returned unchanged
+- Plan 05-02: MP3 bitrate 64k CBR mono (ACX/Audible standard for spoken word)
+- Plan 05-02: Chapter announcements use exaggeration=0.2 and cfg_weight=0.3 for neutral narrator tone
+- Plan 05-03: Zero-padded CHAP element IDs (chp000, chp001...) to prevent chapter ordering issues in players
+- Plan 05-03: Genre always set to "Audiobook" for ID3 tags
+- Plan 05-03: Late import of run_assembly in pipeline.py to defer torch loading for announcements
+- Plan 05-03: WAV files not cleaned up after assembly per user decision
 
 ### Pending Todos
 
@@ -99,6 +111,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-03
-Stopped at: Phase 5 context gathered
-Resume file: .planning/phases/05-audio-assembly-and-final-output/05-CONTEXT.md
+Last session: 2026-03-04
+Stopped at: All 5 phases complete — milestone v1.0 pipeline operational
+Resume file: N/A — project complete

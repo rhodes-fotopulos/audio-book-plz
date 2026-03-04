@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 2: LLM Character Extraction and Speaker Attribution** - Extract character profiles from novel text and attribute every dialogue line to a character via local LLM
 - [x] **Phase 3: Voice-Character Matching** - Match each character to a real human voice from LibriTTS-P and lock the voice map before synthesis begins (completed 2026-03-03)
 - [x] **Phase 4: TTS Synthesis with Checkpoint/Resume** - Synthesize per-segment WAV files using Chatterbox on Apple Silicon MPS with full crash recovery (completed 2026-03-03)
-- [ ] **Phase 5: Audio Assembly and Final Output** - Concatenate WAV segments into chapter and full-book MP3s with ID3 metadata
+- [x] **Phase 5: Audio Assembly and Final Output** - Concatenate WAV segments into chapter and full-book MP3s with ID3 metadata (completed 2026-03-04)
 
 ## Phase Details
 
@@ -86,10 +86,10 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. Silence between segments is appropriate to the segment boundary type — sentences, paragraphs, and chapter breaks are audibly distinct
   3. Volume is consistent across different character voices throughout the audiobook — no one voice dominates or disappears
   4. The MP3 file contains ID3 metadata (title, author, chapter names) that audiobook players such as Audiobookshelf can read and display
-**Plans**: 3 plans
-- [ ] 05-01-PLAN.md — Assembly models, EPUB metadata extraction, WAV concatenator with silence insertion
-- [ ] 05-02-PLAN.md — LUFS normalization, MP3 encoding, chapter announcement TTS generation
-- [ ] 05-03-PLAN.md — ID3 tagger, assembly orchestrator, CLI command, pipeline integration
+**Plans**: 3 plans (all complete)
+- [x] 05-01-PLAN.md — Assembly models, EPUB metadata extraction, WAV concatenator with silence insertion
+- [x] 05-02-PLAN.md — LUFS normalization, MP3 encoding, chapter announcement TTS generation
+- [x] 05-03-PLAN.md — ID3 tagger, assembly orchestrator, CLI command, pipeline integration
 
 ## Progress
 
@@ -102,8 +102,8 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 2. LLM Character Extraction and Speaker Attribution | 3/3 | Complete    | 2026-03-04 |
 | 3. Voice-Character Matching | 3/3 | Complete    | 2026-03-03 |
 | 4. TTS Synthesis with Checkpoint/Resume | 3/3 | Complete    | 2026-03-03 |
-| 5. Audio Assembly and Final Output | 0/TBD | Not started | - |
+| 5. Audio Assembly and Final Output | 3/3 | Complete    | 2026-03-04 |
 
 ---
 *Roadmap created: 2026-03-03*
-*Last updated: 2026-03-03 after Phase 4 execution complete*
+*Last updated: 2026-03-04 after Phase 5 execution complete — all phases done*
