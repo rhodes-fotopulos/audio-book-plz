@@ -72,6 +72,12 @@ def convert(
         "--engine",
         help="TTS engine: qwen3 (MLX, primary) or chatterbox (PyTorch, fallback)",
     ),
+    model: str = typer.Option(
+        None,
+        "--model",
+        help="Override Ollama model for LLM phases (e.g., qwen3:14b, qwen3:8b). "
+        "Default: auto-selects based on available RAM.",
+    ),
     cpu: bool = typer.Option(
         False,
         "--cpu",
@@ -107,7 +113,7 @@ def convert(
 
     run_full_pipeline(
         epub_file, output_dir, libritts_data, libritts_audio,
-        cpu=cpu, engine_type=engine,
+        cpu=cpu, engine_type=engine, model_override=model,
     )
 
 
@@ -116,6 +122,12 @@ def attribute(
     book_dir: Path = typer.Argument(
         ...,
         help="Output directory for a specific book (e.g. output/the-name-of-the-wind/)",
+    ),
+    model: str = typer.Option(
+        None,
+        "--model",
+        help="Override Ollama model (e.g., qwen3:14b, qwen3:8b). "
+        "Default: auto-selects based on available RAM.",
     ),
 ) -> None:
     """Attribute dialogue speakers using local LLM."""
@@ -127,7 +139,7 @@ def attribute(
         )
         raise typer.Exit(code=1)
 
-    run_attribute(book_dir)
+    run_attribute(book_dir, model_override=model)
 
 
 @app.command()
@@ -147,6 +159,12 @@ def match(
         help="Path to LibriTTS-R audio directory (optional). "
         "Default: LIBRITTS_R_AUDIO env var",
         envvar="LIBRITTS_R_AUDIO",
+    ),
+    model: str = typer.Option(
+        None,
+        "--model",
+        help="Override Ollama model (e.g., qwen3:14b, qwen3:8b). "
+        "Default: auto-selects based on available RAM.",
     ),
 ) -> None:
     """Match characters to LibriTTS-P voice references."""
@@ -188,7 +206,7 @@ def match(
         )
         raise typer.Exit(code=1)
 
-    run_match(book_dir, libritts_data, libritts_audio)
+    run_match(book_dir, libritts_data, libritts_audio, model_override=model)
 
 
 @app.command()

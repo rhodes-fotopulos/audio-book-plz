@@ -25,6 +25,7 @@ from src.attribution import (
     attribute_all_segments,
     extract_all_characters,
     merge_characters,
+    preload_model,
     unload_model,
 )
 from src.attribution.attributor import CONFIDENCE_FLAG_THRESHOLD
@@ -123,7 +124,10 @@ def run_parse(epub_path: Path, output_dir: Path) -> Path:
     return segments_path
 
 
-def run_attribute(book_dir: Path) -> tuple[Path, Path]:
+def run_attribute(
+    book_dir: Path,
+    model_override: str | None = None,
+) -> tuple[Path, Path]:
     """End-to-end attribution phase: segments.json -> characters.json + attributed.json.
 
     Runs the three-stage attribution pipeline:
@@ -137,6 +141,8 @@ def run_attribute(book_dir: Path) -> tuple[Path, Path]:
 
     Args:
         book_dir: Book output directory containing segments.json.
+        model_override: If set, force this Ollama model (e.g., ``'qwen3:14b'``).
+            Otherwise auto-selects based on available RAM.
 
     Returns:
         Tuple of (characters_path, attributed_path).
@@ -147,6 +153,10 @@ def run_attribute(book_dir: Path) -> tuple[Path, Path]:
         segments = json.load(f)
 
     cache_dir = book_dir / ".cache"
+
+    # --- Preload LLM model (stays resident through extraction + merge + attribution) ---
+    model_name = preload_model(model_override)
+    rprint(f"[bold cyan]Using LLM: {model_name}[/bold cyan]")
 
     # --- Extraction pass ---
     rprint("[bold cyan]Extracting characters...[/bold cyan]")
@@ -239,6 +249,7 @@ def run_match(
     libritts_data_dir: Path,
     libritts_audio_dir: Path | None = None,
     auto_confirm: bool = False,
+    model_override: str | None = None,
 ) -> Path:
     """End-to-end match phase: attributed segments -> voice_map.json.
 
@@ -250,11 +261,16 @@ def run_match(
         libritts_data_dir: Path to LibriTTS-P data directory.
         libritts_audio_dir: Path to LibriTTS-R audio directory (optional).
         auto_confirm: If True, skip interactive confirmation (pipeline mode).
+        model_override: If set, force this Ollama model for LLM-based matching.
 
     Returns:
         Path to the written voice_map.json file.
     """
     voice_map_path = book_dir / "voice_map.json"
+
+    # --- Preload LLM model for matching ---
+    model_name = preload_model(model_override)
+    rprint(f"[bold cyan]Using LLM: {model_name}[/bold cyan]")
 
     # Run matching pipeline
     voice_map = run_matching(book_dir, libritts_data_dir, libritts_audio_dir)
@@ -606,6 +622,7 @@ def run_full_pipeline(
     libritts_audio_dir: Path | None = None,
     cpu: bool = False,
     engine_type: str = "qwen3",
+    model_override: str | None = None,
 ) -> None:
     """Orchestrate all 5 pipeline phases.
 
@@ -619,6 +636,7 @@ def run_full_pipeline(
         libritts_audio_dir: Path to LibriTTS-R audio directory (optional).
         cpu: If True, force CPU mode for synthesis and assembly.
         engine_type: TTS engine to use (``'qwen3'`` or ``'chatterbox'``).
+        model_override: If set, force this Ollama model for LLM phases.
     """
     rprint("\n[bold green]Phase 1: Parse[/bold green]")
     run_parse(epub_path, output_dir)
@@ -628,7 +646,7 @@ def run_full_pipeline(
     output_book_dir = output_dir / book_slug
 
     rprint("\n[bold green]Phase 2: Attribute[/bold green]")
-    run_attribute(output_book_dir)
+    run_attribute(output_book_dir, model_override=model_override)
 
     rprint("\n[bold green]Phase 3: Match[/bold green]")
     run_match(
@@ -636,6 +654,7 @@ def run_full_pipeline(
         libritts_data_dir,
         libritts_audio_dir,
         auto_confirm=True,  # No interactive prompt in pipeline mode
+        model_override=model_override,
     )
 
     rprint("\n[bold green]Phase 4: Synthesize[/bold green]")
