@@ -17,6 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: Voice-Character Matching** - Match each character to a real human voice from LibriTTS-P and lock the voice map before synthesis begins (completed 2026-03-03)
 - [x] **Phase 4: TTS Synthesis with Checkpoint/Resume** - Synthesize per-segment WAV files using Chatterbox on Apple Silicon MPS with full crash recovery (completed 2026-03-03)
 - [x] **Phase 5: Audio Assembly and Final Output** - Concatenate WAV segments into chapter and full-book MP3s with ID3 metadata (completed 2026-03-04)
+- [ ] **Phase 6: Integration Fixes and Full Pipeline Wiring** - Fix blocking integration bugs and wire all phases into end-to-end pipeline
 
 ## Phase Details
 
@@ -91,10 +92,23 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] 05-02-PLAN.md — LUFS normalization, MP3 encoding, chapter announcement TTS generation
 - [x] 05-03-PLAN.md — ID3 tagger, assembly orchestrator, CLI command, pipeline integration
 
+### Phase 6: Integration Fixes and Full Pipeline Wiring
+**Goal**: Fix all blocking integration bugs so the full pipeline works end-to-end — `python main.py convert book.epub` delivers a complete audiobook.mp3 with no manual intervention
+**Depends on**: Phases 1-5 (all existing code)
+**Requirements**: CLI-01, AUDIO-01, AUDIO-02, AUDIO-03, AUDIO-04, VOICE-01, VOICE-02, VOICE-03, VOICE-04, VOICE-05
+**Gap Closure:** Closes gaps from v1 milestone audit (2026-03-04)
+**Success Criteria** (what must be TRUE):
+  1. Phase 5 assembler correctly discovers WAV files written by Phase 4 synthesizer (WAV path convention aligned)
+  2. Phase 3 voice matching works on first run without ValidationError (CharacterProfile strict mode fixed)
+  3. Phase 5 announcer handles missing/placeholder narrator clip_path gracefully instead of crashing
+  4. `python main.py convert book.epub` runs all 5 phases end-to-end (no stubs) and produces audiobook.mp3
+  5. epub_path is threaded through the full pipeline so Phase 5 can extract metadata for ID3 tags
+**Plans**: TBD
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -103,7 +117,8 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 3. Voice-Character Matching | 3/3 | Complete    | 2026-03-03 |
 | 4. TTS Synthesis with Checkpoint/Resume | 3/3 | Complete    | 2026-03-03 |
 | 5. Audio Assembly and Final Output | 3/3 | Complete    | 2026-03-04 |
+| 6. Integration Fixes and Full Pipeline Wiring | 0/0 | Not Started | — |
 
 ---
 *Roadmap created: 2026-03-03*
-*Last updated: 2026-03-04 after Phase 5 execution complete — all phases done*
+*Last updated: 2026-03-04 after gap closure phase added from milestone audit*

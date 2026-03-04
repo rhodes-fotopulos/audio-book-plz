@@ -107,7 +107,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PARSE-05 | Phase 1 | Pending |
 | PARSE-06 | Phase 1 | Pending |
 | PARSE-07 | Phase 1 | Pending |
-| CLI-01 | Phase 1 | Pending |
+| CLI-01 | Phase 6 | Pending |
 | CLI-02 | Phase 1 | Pending |
 | ATTR-01 | Phase 2 | Pending |
 | ATTR-02 | Phase 2 | Pending |
@@ -115,11 +115,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ATTR-04 | Phase 2 | Pending |
 | ATTR-05 | Phase 2 | Pending |
 | ATTR-06 | Phase 2 | Pending |
-| VOICE-01 | Phase 3 | Pending |
-| VOICE-02 | Phase 3 | Pending |
-| VOICE-03 | Phase 3 | Pending |
-| VOICE-04 | Phase 3 | Pending |
-| VOICE-05 | Phase 3 | Pending |
+| VOICE-01 | Phase 6 | Pending |
+| VOICE-02 | Phase 6 | Pending |
+| VOICE-03 | Phase 6 | Pending |
+| VOICE-04 | Phase 6 | Pending |
+| VOICE-05 | Phase 6 | Pending |
 | SYNTH-01 | Phase 4 | Pending |
 | SYNTH-02 | Phase 4 | Pending |
 | SYNTH-03 | Phase 4 | Pending |
@@ -128,10 +128,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SYNTH-06 | Phase 4 | Pending |
 | CLI-03 | Phase 4 | Pending |
 | CLI-04 | Phase 4 | Pending |
-| AUDIO-01 | Phase 5 | Pending |
-| AUDIO-02 | Phase 5 | Pending |
-| AUDIO-03 | Phase 5 | Pending |
-| AUDIO-04 | Phase 5 | Pending |
+| AUDIO-01 | Phase 6 | Pending |
+| AUDIO-02 | Phase 6 | Pending |
+| AUDIO-03 | Phase 6 | Pending |
+| AUDIO-04 | Phase 6 | Pending |
 
 **Coverage:**
 - v1 requirements: 32 total
@@ -140,4 +140,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-03-03*
-*Last updated: 2026-03-03 after roadmap creation — all 32 requirements mapped*
+*Last updated: 2026-03-04 after gap closure — 10 requirements reassigned to Phase 6*
