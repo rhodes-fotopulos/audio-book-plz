@@ -5,7 +5,7 @@ from pathlib import Path
 import typer
 from rich import print as rprint
 
-from src.pipeline import run_full_pipeline, run_parse
+from src.pipeline import run_attribute, run_full_pipeline, run_parse
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -67,8 +67,15 @@ def attribute(
     ),
 ) -> None:
     """Attribute dialogue speakers using local LLM."""
-    rprint("[yellow]Not yet implemented — coming in Phase 2[/yellow]")
-    raise typer.Exit(code=0)
+    segments_file = book_dir / "segments.json"
+    if not segments_file.exists():
+        rprint(
+            f"[red]Error:[/red] segments.json not found in [bold]{book_dir}[/bold]. "
+            "Run 'parse' first."
+        )
+        raise typer.Exit(code=1)
+
+    run_attribute(book_dir)
 
 
 @app.command()
