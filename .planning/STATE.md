@@ -5,14 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-03-04)
 
 **Core value:** Feed in an EPUB, get out a multi-voice audiobook where each character has a distinct, fitting voice cloned from a real human recording.
-**Current focus:** Phase 7 — TTS Engine Swap (v1.1)
+**Current focus:** Phase 8 — LLM Intelligence and Emotion (v1.1)
 
 ## Current Position
 
-Phase: 7 of 9 (TTS Engine Swap)
-Plan: 3 of 3 in current phase
-Status: Executed — ready for verification
-Last activity: 2026-03-04 — Phase 7 executed (3/3 plans, 2 waves)
+Phase: 8 of 9 (LLM Intelligence and Emotion)
+Plan: 0 of ? in current phase
+Status: Context gathered — ready for planning
+Last activity: 2026-03-04 — Phase 8 context gathered
 
 Progress: [██████████████████████░░░░░░░░] 17/17 v1.0 plans complete | v1.1: 3/3 Phase 7 done
 
@@ -50,5 +50,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-04
-Stopped at: Phase 7 executed, ready for verification
-Resume file: .planning/phases/07-tts-engine-swap/07-03-SUMMARY.md
+Stopped at: Phase 8 context gathered
+Resume file: .planning/phases/08-llm-intelligence-and-emotion/08-CONTEXT.md
