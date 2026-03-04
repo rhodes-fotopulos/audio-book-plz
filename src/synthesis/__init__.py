@@ -14,6 +14,7 @@ from src.synthesis.checkpoint import (
     validate_checkpoint,
 )
 from src.synthesis.models import SegmentResult, SynthesisConfig, SynthesisStats
+from src.synthesis.synthesizer import run_synthesis
 from src.synthesis.tts_engine import TTSEngine
 
 __all__ = [
@@ -21,6 +22,7 @@ __all__ = [
     "SynthesisConfig",
     "SegmentResult",
     "SynthesisStats",
+    "run_synthesis",
     "create_checkpoint",
     "save_checkpoint",
     "load_checkpoint",
