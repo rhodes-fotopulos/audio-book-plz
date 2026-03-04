@@ -26,7 +26,7 @@
 - [x] **Phase 7: TTS Engine Swap** — Replace Chatterbox with Qwen3-TTS 1.7B via mlx-audio for better voice cloning, larger chunks, and Apple Silicon native inference
 - [x] **Phase 8: LLM Intelligence and Emotion** — Upgrade LLM to 14B, add hybrid dialogue detection with speech-act tagging, and build three-layer emotion system
 - [x] **Phase 9: Production Polish** — Randomized pauses, professional post-processing chain, voice consistency verification, and ACX-grade export
-- [ ] **Phase 10: Verification & CLI Wiring Fixes** — Fix CLI dead/missing flags, create Phase 8+9 VERIFICATION.md, update SUMMARY frontmatter, close all audit gaps
+- [x] **Phase 10: Verification & CLI Wiring Fixes** — Fix CLI dead/missing flags, create Phase 8+9 VERIFICATION.md, update SUMMARY frontmatter, close all audit gaps (completed 2026-03-04)
 
 ## Phase Details
 
@@ -115,7 +115,7 @@ Phases execute in numeric order: 7 -> 8 -> 9 -> 10
 | 7. TTS Engine Swap | v1.1 | 3/3 | Complete | 2026-03-04 |
 | 8. LLM Intelligence and Emotion | v1.1 | 3/3 | Complete | 2026-03-04 |
 | 9. Production Polish | v1.1 | 3/3 | Complete | 2026-03-04 |
-| 10. Verification & CLI Wiring Fixes | v1.1 | 0/3 | Planned | — |
+| 10. Verification & CLI Wiring Fixes | v1.1 | Complete    | 2026-03-04 | — |
 
 ---
 *Roadmap created: 2026-03-03*
