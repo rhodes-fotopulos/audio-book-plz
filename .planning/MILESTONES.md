@@ -24,3 +24,28 @@
 
 ---
 
+
+## v1.1 Pipeline Quality Improvements (Shipped: 2026-03-04)
+
+**Phases completed:** 4 phases, 12 plans
+**Lines of code:** 14,621 Python (total project, ~5,100 added in v1.1)
+**Timeline:** 1 day (2026-03-04)
+
+**Delivered:** Upgraded the audiobook pipeline from working prototype to professional quality — swapped TTS engine to Qwen3-TTS 1.7B (MLX native), added 14B LLM with emotion-aware dialogue detection, and built a full mastering pipeline with voice consistency verification and ACX-grade export.
+
+**Key accomplishments:**
+1. Qwen3-TTS 1.7B via mlx-audio — Apple Silicon native, 500-600 char chunks, SNR-filtered voice references with transcripts
+2. 14B LLM upgrade with hybrid regex+LLM dialogue detection and speech-act tagging (spoken/thought/shouted/whispered)
+3. Three-layer emotion system — character voice baselines, scene mood annotation, line-level overrides feeding post-processing
+4. Professional mastering — pedalboard effects chain (noise gate, compressor, 80Hz highpass, limiter), Gaussian pauses, 8ms crossfades
+5. Voice consistency verification — Resemblyzer speaker embeddings detect drift, regenerate outliers (cosine 0.60 threshold, 3 attempts)
+6. ACX-grade export — 44.1kHz 192kbps CBR MP3 with proper loudness and peak specifications
+
+**All audit gaps resolved by Phase 10:**
+- CLI wiring bugs fixed (assemble --voice-threshold, synthesize --libritts-audio)
+- Phase 8 and 9 VERIFICATION.md created with code evidence
+- Phase 9 SUMMARY frontmatter added
+- Pipeline docstring updated for v1.1
+
+---
+
