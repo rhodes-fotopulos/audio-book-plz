@@ -10,28 +10,28 @@ See: .planning/PROJECT.md (updated 2026-03-03)
 ## Current Position
 
 Phase: 1 of 5 (EPUB Parsing and CLI Skeleton)
-Plan: 1 of 3 in current phase
-Status: In progress — Plan 01 complete, Plans 02-03 remaining
-Last activity: 2026-03-04 — Plan 01-01 complete (project foundation + EPUB parser)
+Plan: 2 of 3 in current phase
+Status: In progress — Plans 01-02 complete, Plan 03 remaining
+Last activity: 2026-03-04 — Plan 01-02 complete (text segmenter TDD with dialogue detection and splitting)
 
-Progress: [█░░░░░░░░░] 7%
+Progress: [██░░░░░░░░] 13%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 1
-- Average duration: 2 min
-- Total execution time: 0.03 hours
+- Total plans completed: 2
+- Average duration: 3 min
+- Total execution time: 0.10 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 01-epub-parsing-and-cli-skeleton | 1 | 2 min | 2 min |
+| 01-epub-parsing-and-cli-skeleton | 2 | 6 min | 3 min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (2 min)
-- Trend: -
+- Last 5 plans: 01-01 (2 min), 01-02 (4 min)
+- Trend: stable
 
 *Updated after each plan completion*
 
@@ -48,6 +48,9 @@ Recent decisions affecting current work:
 - Plan 01-01: setuptools.build_meta used as build backend (setuptools.backends.legacy not available in Python 3.11 setuptools bundled with uv)
 - Plan 01-01: uv venv .venv with Python 3.11.14 for environment management (system pip blocked by PEP 668)
 - Plan 01-01: 4 SegmentType values only — no 5th for internal monologue; Phase 2 LLM handles that distinction with full story context
+- Plan 01-02: Short text blocks (<=280 chars) returned as single segment without NLTK splitting — dialogue lines kept together when they fit
+- Plan 01-02: Conservative dialogue tagging — any double quote presence tags block as dialogue; Phase 2 LLM refines attribution
+- Plan 01-02: Plain apostrophe (U+0027) excluded from dialogue detection; only curly single U+2018/U+2019 triggers dialogue
 
 ### Pending Todos
 
@@ -62,5 +65,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-04
-Stopped at: Completed 01-01-PLAN.md (project foundation + EPUB parser)
-Resume file: .planning/phases/01-epub-parsing-and-cli-skeleton/01-02-PLAN.md
+Stopped at: Completed 01-02-PLAN.md (text segmenter with TDD)
+Resume file: .planning/phases/01-epub-parsing-and-cli-skeleton/01-03-PLAN.md
