@@ -84,18 +84,18 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TTS-04 | Phase 7 | Complete |
 | TTS-05 | Phase 7 | Complete |
 | TTS-06 | Phase 7 | Complete |
-| LLM-01 | Phase 8 | Pending |
-| LLM-02 | Phase 8 | Pending |
-| LLM-03 | Phase 8 | Pending |
-| EMO-01 | Phase 8 | Pending |
-| EMO-02 | Phase 8 | Pending |
-| EMO-03 | Phase 8 | Pending |
-| EMO-04 | Phase 8 | Pending |
-| POL-01 | Phase 9 | Pending |
-| POL-02 | Phase 9 | Pending |
-| POL-03 | Phase 9 | Pending |
-| POL-04 | Phase 9 | Pending |
-| POL-05 | Phase 9 | Pending |
+| LLM-01 | Phase 8, 10 | Pending |
+| LLM-02 | Phase 8, 10 | Pending |
+| LLM-03 | Phase 8, 10 | Pending |
+| EMO-01 | Phase 8, 10 | Pending |
+| EMO-02 | Phase 8, 10 | Pending |
+| EMO-03 | Phase 8, 10 | Pending |
+| EMO-04 | Phase 8, 10 | Pending |
+| POL-01 | Phase 9, 10 | Pending |
+| POL-02 | Phase 9, 10 | Pending |
+| POL-03 | Phase 9, 10 | Pending |
+| POL-04 | Phase 9, 10 | Pending |
+| POL-05 | Phase 9, 10 | Pending |
 
 **Coverage:**
 - v1.1 requirements: 18 total
@@ -104,4 +104,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-03-04*
-*Last updated: 2026-03-04 after roadmap creation — all 18 requirements mapped to phases*
+*Last updated: 2026-03-04 after gap closure Phase 10 added — 12 requirements assigned to Phase 10 for verification*

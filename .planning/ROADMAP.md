@@ -3,7 +3,7 @@
 ## Milestones
 
 - ✅ **v1.0 MVP** — Phases 1-6 (shipped 2026-03-04) — [archive](milestones/v1.0-ROADMAP.md)
-- ✅ **v1.1 Pipeline Quality Improvements** — Phases 7-9 (shipped 2026-03-04)
+- 🔧 **v1.1 Pipeline Quality Improvements** — Phases 7-10
 
 ## Phases
 
@@ -19,13 +19,14 @@
 
 </details>
 
-### v1.1 Pipeline Quality Improvements (Complete)
+### v1.1 Pipeline Quality Improvements
 
 **Milestone Goal:** Upgrade the audiobook pipeline with Qwen3-TTS (MLX native), emotional narration control, improved dialogue detection, and professional post-processing to close the gap between "working prototype" and "listenable audiobook."
 
 - [x] **Phase 7: TTS Engine Swap** — Replace Chatterbox with Qwen3-TTS 1.7B via mlx-audio for better voice cloning, larger chunks, and Apple Silicon native inference
 - [x] **Phase 8: LLM Intelligence and Emotion** — Upgrade LLM to 14B, add hybrid dialogue detection with speech-act tagging, and build three-layer emotion system
 - [x] **Phase 9: Production Polish** — Randomized pauses, professional post-processing chain, voice consistency verification, and ACX-grade export
+- [ ] **Phase 10: Verification & CLI Wiring Fixes** — Fix CLI dead/missing flags, create Phase 8+9 VERIFICATION.md, update SUMMARY frontmatter, close all audit gaps
 
 ## Phase Details
 
@@ -79,10 +80,24 @@ Plans:
 - [x] 09-02-PLAN.md — Voice consistency verification with Resemblyzer speaker embeddings (Wave 1)
 - [x] 09-03-PLAN.md — ACX export (44.1kHz 192kbps) + file naming + CLI flags + pipeline wiring (Wave 2)
 
+### Phase 10: Verification & CLI Wiring Fixes
+**Goal**: Close all v1.1 audit gaps — fix 2 CLI wiring bugs, create VERIFICATION.md for Phases 8 and 9, update Phase 9 SUMMARY frontmatter, and fix stale docstring
+**Depends on**: Phase 9
+**Requirements**: LLM-01, LLM-02, LLM-03, EMO-01, EMO-02, EMO-03, EMO-04, POL-01, POL-02, POL-03, POL-04, POL-05
+**Gap Closure:** Closes gaps from v1.1 milestone audit
+**Success Criteria** (what must be TRUE):
+  1. `assemble --voice-threshold 0.80` actually runs voice consistency check (dead flag wired)
+  2. `synthesize --libritts-audio` flag exists and passes LibriTTS-R path to voice reference prep
+  3. Phase 8 VERIFICATION.md exists confirming LLM-01..03, EMO-01..04
+  4. Phase 9 VERIFICATION.md exists confirming POL-01..05
+  5. Phase 9 SUMMARY.md files have `requirements-completed` frontmatter
+  6. Stale docstring in pipeline.py referencing Chatterbox is updated
+**Plans**: TBD
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 7 -> 8 -> 9
+Phases execute in numeric order: 7 -> 8 -> 9 -> 10
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -95,7 +110,8 @@ Phases execute in numeric order: 7 -> 8 -> 9
 | 7. TTS Engine Swap | v1.1 | 3/3 | Complete | 2026-03-04 |
 | 8. LLM Intelligence and Emotion | v1.1 | 3/3 | Complete | 2026-03-04 |
 | 9. Production Polish | v1.1 | 3/3 | Complete | 2026-03-04 |
+| 10. Verification & CLI Wiring Fixes | v1.1 | 0/TBD | Planned | — |
 
 ---
 *Roadmap created: 2026-03-03*
-*Last updated: 2026-03-04 after Phase 9 execution*
+*Last updated: 2026-03-04 after gap closure phases added*
