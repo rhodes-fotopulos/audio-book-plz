@@ -12,7 +12,7 @@ See: .planning/PROJECT.md (updated 2026-03-04)
 Phase: 7 of 9 (TTS Engine Swap)
 Plan: 0 of ? in current phase
 Status: Ready to plan
-Last activity: 2026-03-04 — v1.1 roadmap created (3 phases, 18 requirements)
+Last activity: 2026-03-04 — Phase 7 context gathered
 
 Progress: [██████████████████░░░░░░░░░░░░] 17/17 v1.0 plans complete | v1.1: 0% started
 
@@ -48,5 +48,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-04
-Stopped at: v1.1 roadmap created, ready to plan Phase 7
-Resume file: N/A
+Stopped at: Phase 7 context gathered
+Resume file: .planning/phases/07-tts-engine-swap/07-CONTEXT.md
