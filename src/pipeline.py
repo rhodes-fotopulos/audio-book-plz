@@ -4,7 +4,7 @@ Coordinates the multi-phase conversion pipeline:
   Phase 1 - Parse:      EPUB -> segments.json
   Phase 2 - Attribute:  segments.json -> characters.json + attributed.json
   Phase 3 - Match:      attributed segments -> voice_map.json
-  Phase 4 - Synthesize: segments -> audio files (stub)
+  Phase 4 - Synthesize: segments -> WAV audio files via Chatterbox TTS
   Phase 5 - Assemble:   audio files -> final MP3 (stub)
 """
 
@@ -27,10 +27,12 @@ from src.attribution import (
     unload_model,
 )
 from src.attribution.attributor import CONFIDENCE_FLAG_THRESHOLD
+from src.matching.models import VoiceMap
 from src.matching.orchestrator import run_matching
 from src.parser.epub_reader import get_story_chapters, load_epub
 from src.parser.html_cleaner import chapter_to_text_blocks
 from src.parser.segmenter import process_chapter_blocks
+from src.synthesis.models import SynthesisConfig
 
 
 def _make_book_slug(epub_path: Path) -> str:
@@ -337,6 +339,139 @@ def run_match(
     return voice_map_path
 
 
+def run_synthesize(
+    book_dir: Path,
+    chapter: int | None = None,
+    dry_run: bool = False,
+    verbose: bool = False,
+    cpu: bool = False,
+) -> Path:
+    """End-to-end synthesis phase: attributed segments -> WAV audio files.
+
+    Loads voice_map.json and attributed.json, then either shows a dry-run
+    estimate or runs full synthesis via Chatterbox TTS with checkpoint/resume.
+
+    Args:
+        book_dir: Book output directory containing voice_map.json and attributed.json.
+        chapter: If set, only synthesise this chapter number.
+        dry_run: If True, show estimates without generating audio.
+        verbose: If True, show per-segment detail during synthesis.
+        cpu: If True, force CPU mode (skip MPS acceleration).
+
+    Returns:
+        Path to the wavs output directory.
+    """
+    # ---- Validate inputs ----
+    voice_map_path = book_dir / "voice_map.json"
+    attributed_path = book_dir / "attributed.json"
+
+    if not voice_map_path.exists():
+        rprint(
+            f"[red]Error:[/red] voice_map.json not found in [bold]{book_dir}[/bold]. "
+            "Run 'match' first."
+        )
+        raise typer.Exit(code=1)
+
+    if not attributed_path.exists():
+        rprint(
+            f"[red]Error:[/red] attributed.json not found in [bold]{book_dir}[/bold]. "
+            "Run 'attribute' first."
+        )
+        raise typer.Exit(code=1)
+
+    # ---- Load data ----
+    with open(voice_map_path, "r", encoding="utf-8") as f:
+        voice_map = VoiceMap.model_validate_json(f.read())
+
+    with open(attributed_path, "r", encoding="utf-8") as f:
+        attributed_segments: list[dict] = json.load(f)
+
+    # ---- Filter by chapter if requested ----
+    segments = attributed_segments
+    if chapter is not None:
+        segments = [s for s in segments if s.get("chapter") == chapter]
+
+    # ---- Dry run mode ----
+    if dry_run:
+        chapter_set = {s.get("chapter") for s in segments}
+        num_chapters = len(chapter_set)
+        num_segments = len(segments)
+
+        # Estimates: ~3s average audio per segment, 1.5x real-time generation
+        avg_audio_s = 3.0
+        est_audio_s = num_segments * avg_audio_s
+        est_wall_s = num_segments * 4.5  # 1.5x real-time factor
+        # WAV size: 24kHz 16-bit mono = 48000 bytes/sec
+        est_disk_bytes = num_segments * avg_audio_s * 48000
+
+        def _fmt_time(seconds: float) -> str:
+            hours = int(seconds // 3600)
+            minutes = int((seconds % 3600) // 60)
+            if hours > 0:
+                return f"~{hours}h {minutes:02d}m"
+            return f"~{minutes}m"
+
+        def _fmt_size(nbytes: float) -> str:
+            if nbytes >= 1_073_741_824:
+                return f"~{nbytes / 1_073_741_824:.1f} GB"
+            return f"~{nbytes / 1_048_576:.0f} MB"
+
+        wavs_dir = book_dir / "wavs"
+
+        table = Table(title="Dry Run Estimate")
+        table.add_column("", style="bold")
+        table.add_column("", style="cyan")
+        table.add_row("Chapters", str(num_chapters))
+        table.add_row("Segments", str(num_segments))
+        table.add_row("Est. audio", _fmt_time(est_audio_s))
+        table.add_row("Est. wall time", _fmt_time(est_wall_s))
+        table.add_row("Est. disk space", _fmt_size(est_disk_bytes))
+        table.add_row("WAV output", str(wavs_dir))
+
+        rprint()
+        rprint(table)
+        return wavs_dir
+
+    # ---- Build config ----
+    config = SynthesisConfig(device="cpu" if cpu else "auto")
+
+    # ---- Run synthesis ----
+    wavs_dir = book_dir / "wavs"
+    try:
+        from src.synthesis.synthesizer import run_synthesis
+
+        stats = run_synthesis(
+            book_dir, voice_map, attributed_segments, config,
+            chapter=chapter, verbose=verbose,
+        )
+
+        # Print completion summary
+        def _fmt_duration(seconds: float) -> str:
+            hours = int(seconds // 3600)
+            minutes = int((seconds % 3600) // 60)
+            secs = int(seconds % 60)
+            if hours > 0:
+                return f"{hours}h {minutes:02d}m {secs:02d}s"
+            return f"{minutes}m {secs:02d}s"
+
+        rprint(
+            f"\n[bold green]Synthesis complete[/bold green]\n"
+            f"  Segments   : [cyan]{stats.completed}[/cyan] completed"
+            f" ({stats.skipped_cached} cached, {stats.failed} failed)\n"
+            f"  Audio      : [cyan]{_fmt_duration(stats.total_audio_duration_s)}[/cyan]\n"
+            f"  Wall time  : [cyan]{_fmt_duration(stats.total_wall_time_s)}[/cyan]\n"
+            f"  Output     : [cyan]{wavs_dir}[/cyan]"
+        )
+
+    except KeyboardInterrupt:
+        rprint(
+            "\n[yellow]Synthesis interrupted.[/yellow] "
+            "Checkpoint saved — resume with same command."
+        )
+
+    return wavs_dir
+
+
 def run_full_pipeline(epub_path: Path, output_dir: Path) -> None:
     """Orchestrate all 5 pipeline phases.
 
@@ -359,5 +494,8 @@ def run_full_pipeline(epub_path: Path, output_dir: Path) -> None:
         "[yellow]Phase 3 (match): requires --libritts-data path. "
         "Run separately: python main.py match <book-dir> --libritts-data <path>[/yellow]"
     )
-    rprint("[yellow]Phase 4 (synthesize): not yet implemented[/yellow]")
+    rprint(
+        "[yellow]Phase 4 (synthesize): requires voice_map.json from match phase. "
+        "Run separately: python main.py synthesize <book-dir>[/yellow]"
+    )
     rprint("[yellow]Phase 5 (assemble): not yet implemented[/yellow]")

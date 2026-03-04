@@ -5,7 +5,13 @@ from pathlib import Path
 import typer
 from rich import print as rprint
 
-from src.pipeline import run_attribute, run_full_pipeline, run_match, run_parse
+from src.pipeline import (
+    run_attribute,
+    run_full_pipeline,
+    run_match,
+    run_parse,
+    run_synthesize,
+)
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -145,10 +151,49 @@ def synthesize(
         ...,
         help="Output directory for a specific book (e.g. output/the-name-of-the-wind/)",
     ),
+    chapter: int = typer.Option(
+        None,
+        help="Synthesize only this chapter number (useful for voice testing)",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Show estimated time and disk space without synthesizing",
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "-v",
+        "--verbose",
+        help="Show per-segment detail during synthesis",
+    ),
+    cpu: bool = typer.Option(
+        False,
+        "--cpu",
+        help="Force CPU mode (skip MPS acceleration)",
+    ),
 ) -> None:
     """Synthesize audio segments with Chatterbox TTS."""
-    rprint("[yellow]Not yet implemented — coming in Phase 4[/yellow]")
-    raise typer.Exit(code=0)
+    # Validate prerequisites
+    voice_map_file = book_dir / "voice_map.json"
+    attributed_file = book_dir / "attributed.json"
+
+    if not voice_map_file.exists():
+        rprint(
+            f"[red]Error:[/red] voice_map.json not found in [bold]{book_dir}[/bold]. "
+            "Run 'match' first."
+        )
+        raise typer.Exit(code=1)
+
+    if not attributed_file.exists():
+        rprint(
+            f"[red]Error:[/red] attributed.json not found in [bold]{book_dir}[/bold]. "
+            "Run 'attribute' first."
+        )
+        raise typer.Exit(code=1)
+
+    run_synthesize(
+        book_dir, chapter=chapter, dry_run=dry_run, verbose=verbose, cpu=cpu
+    )
 
 
 @app.command()

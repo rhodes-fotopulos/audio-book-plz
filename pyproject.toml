@@ -13,6 +13,7 @@ dependencies = [
     "ollama>=0.6",
     "pydantic>=2.0",
     "sentence-transformers>=3.0",
+    "chatterbox-tts>=0.1.6",
 ]
 
 [project.optional-dependencies]
