@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-03-04)
 ## Current Position
 
 Phase: 7 of 9 (TTS Engine Swap)
-Plan: 0 of ? in current phase
-Status: Ready to plan
-Last activity: 2026-03-04 — Phase 7 context gathered
+Plan: 0 of 3 in current phase
+Status: Planned — ready to execute
+Last activity: 2026-03-04 — Phase 7 planned (3 plans in 2 waves)
 
 Progress: [██████████████████░░░░░░░░░░░░] 17/17 v1.0 plans complete | v1.1: 0% started
 
@@ -41,12 +41,12 @@ None yet.
 
 ### Blockers/Concerns
 
-- mlx-audio v0.3.1 has active bugs (#464 audio dropout, #439 accent loss) — validate in Phase 7 spike
+- mlx-audio v0.3.1 had bugs (#464 audio dropout, #439 accent loss) — both CLOSED as of 2026-01-31; require mlx>=0.30.3
 - Qwen3-TTS Base model ignores `instruct` param with cloned voices — emotion system redesigned around this
 - Ollama 14B on 16GB needs empirical validation under full novel-length attribution
 
 ## Session Continuity
 
 Last session: 2026-03-04
-Stopped at: Phase 7 context gathered
-Resume file: .planning/phases/07-tts-engine-swap/07-CONTEXT.md
+Stopped at: Phase 7 planned, ready to execute
+Resume file: .planning/phases/07-tts-engine-swap/07-01-PLAN.md
