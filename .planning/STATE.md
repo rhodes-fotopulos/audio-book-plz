@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-03-03)
 
 **Core value:** Feed in an EPUB, get out a multi-voice audiobook where each character has a distinct, fitting voice cloned from a real human recording.
-**Current focus:** Phase 6 — Integration Fixes and Full Pipeline Wiring (gap closure)
+**Current focus:** Phase 6 — Integration Fixes and Full Pipeline Wiring COMPLETE
 
 ## Current Position
 
-Phase: 6 of 6 (Integration Fixes and Full Pipeline Wiring)
-Plan: 1 of 2 in current phase — Plan 06-01 complete
-Status: Executing Phase 6 gap closure
-Last activity: 2026-03-04 — Plan 06-01 complete (WAV path fix, announcer fix, model_validate)
+Phase: 6 of 6 (Integration Fixes and Full Pipeline Wiring) — COMPLETE
+Plan: 2 of 2 in current phase — all plans complete
+Status: ALL PHASES COMPLETE — full pipeline operational end-to-end
+Last activity: 2026-03-04 — Plan 06-02 complete (pipeline wiring, CLI options)
 
-Progress: [█████████████████░░░] 88%
+Progress: [████████████████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 16
+- Total plans completed: 17
 - Average duration: 3 min
-- Total execution time: 0.77 hours
+- Total execution time: 0.83 hours
 
 **By Phase:**
 
@@ -32,10 +32,10 @@ Progress: [█████████████████░░░] 88%
 | 03-voice-character-matching | 3 | 13 min | 4 min |
 | 04-tts-synthesis-with-checkpoint-resume | 3 | 12 min | 4 min |
 | 05-audio-assembly-and-final-output | 3 | 11 min | 4 min |
-| 06-integration-fixes-and-full-pipeline-wiring | 1 | 3 min | 3 min |
+| 06-integration-fixes-and-full-pipeline-wiring | 2 | 7 min | 4 min |
 
 **Recent Trend:**
-- Last 5 plans: 04-03 (4 min), 05-01 (3 min), 05-02 (3 min), 05-03 (5 min), 06-01 (3 min)
+- Last 5 plans: 05-01 (3 min), 05-02 (3 min), 05-03 (5 min), 06-01 (3 min), 06-02 (4 min)
 - Trend: stable
 
 *Updated after each plan completion*
@@ -101,6 +101,8 @@ Recent decisions affecting current work:
 - Plan 05-03: WAV files not cleaned up after assembly per user decision
 - [Phase 06]: Plan 06-01: AUDIO_DIR/ prefix detected as placeholder pattern before file existence check
 - [Phase 06]: Plan 06-01: Announcer returns empty dict (not None) for consistent downstream handling
+- [Phase 06]: Plan 06-02: auto_confirm=True in pipeline mode — voice map written without interactive prompt
+- [Phase 06]: Plan 06-02: libritts_data_dir is required parameter for run_full_pipeline (Phase 3 cannot run without it)
 
 ### Pending Todos
 
@@ -115,5 +117,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-04
-Stopped at: Completed 06-01-PLAN.md (WAV path fix, announcer fix, model_validate)
-Resume file: .planning/phases/06-integration-fixes-and-full-pipeline-wiring/06-01-SUMMARY.md
+Stopped at: Completed 06-02-PLAN.md — Phase 6 complete, all phases done
+Resume file: N/A — all phases complete
