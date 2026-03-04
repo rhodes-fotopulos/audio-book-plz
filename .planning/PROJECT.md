@@ -8,6 +8,21 @@ A local Python app that converts EPUB files into multi-voice audiobooks (.mp3). 
 
 Feed in an EPUB, get out a multi-voice audiobook where each character has a distinct, fitting voice cloned from a real human recording.
 
+## Current Milestone: v1.1 Pipeline Quality Improvements
+
+**Goal:** Upgrade the audiobook pipeline with a better TTS engine (Qwen3-TTS via MLX), emotional narration control, improved dialogue detection, and professional post-processing.
+
+**Target features:**
+- Swap Chatterbox → Qwen3-TTS 1.7B (MLX, Apple Silicon native)
+- Increase chunk size (~280 → ~500-600 chars)
+- Longer voice references (10s → 20-30s)
+- LLM model upgrade for attribution (qwen3:14b or 8b Q8_0)
+- Three-layer emotion system (character baseline + scene mood + line overrides)
+- LLM-based dialogue detection (replace regex)
+- Randomized pause timing
+- Post-processing pipeline (segment + chapter level)
+- Voice consistency pass (embedding-based drift detection)
+
 ## Requirements
 
 ### Validated
@@ -22,7 +37,19 @@ Feed in an EPUB, get out a multi-voice audiobook where each character has a dist
 - ✓ Checkpoint/resume support for long-running synthesis — v1.0
 - ✓ Sequential LLM/TTS phases to stay within 16GB memory budget — v1.0
 
-### Active
+### Active (v1.1)
+
+- [ ] Replace Chatterbox TTS with Qwen3-TTS 1.7B via MLX for better voice cloning and emotion control
+- [ ] Increase TTS chunk size from ~280 to ~500-600 chars for fewer seams and better prosody
+- [ ] Select 20-30s voice reference clips with SNR filtering for better cloning fidelity
+- [ ] Upgrade LLM to qwen3:14b Q4_K_M or qwen3:8b Q8_0 for fewer attribution errors
+- [ ] Three-layer emotion system: character voice baseline + scene mood + line-level overrides
+- [ ] LLM-based dialogue detection replacing regex (spoken/thought/shouted/whispered tagging)
+- [ ] Randomized pause timing with context-aware ranges (scene breaks, speaker changes, etc.)
+- [ ] Post-processing pipeline: trim, de-click, normalize, crossfade, compress, EQ, 44.1kHz 192kbps export
+- [ ] Voice consistency pass: embedding comparison to detect and regenerate drifted segments
+
+### Future
 
 - [ ] Edit attribution JSON by hand and re-run synthesis from that point
 - [ ] Custom pronunciation overrides via YAML for character names and proper nouns
@@ -30,7 +57,6 @@ Feed in an EPUB, get out a multi-voice audiobook where each character has a dist
 - [ ] Preview each character's voice (3-second sample) before full synthesis
 - [ ] Individual chapter MP3 files in addition to full audiobook
 - [ ] M4B export with embedded chapter markers for audiobook player support
-- [ ] Emotion/prosody controls per character type
 
 ### Out of Scope
 
@@ -50,10 +76,14 @@ Tech stack: Python 3.11, Ollama + Qwen3 8B, Chatterbox TTS, LibriTTS-P (2,443 sp
 Architecture: Five sequential phases — EPUB parsing → LLM attribution → voice matching → TTS synthesis → audio assembly. Each phase produces intermediate JSON/WAV artifacts enabling checkpoint/resume.
 Hardware: M4 Mac with 16GB unified memory. LLM and TTS run in separate phases with explicit Ollama teardown at the boundary.
 
+**v1.1 direction:** Swapping Chatterbox → Qwen3-TTS 1.7B (MLX). This changes the TTS engine, removes PyTorch/MPS dependencies for TTS, enables natural language emotion prompts, and increases max chunk size. The emotion system (3-layer: baseline + scene + line) is the biggest quality differentiator. Post-processing pipeline moves from light normalization to ACX-grade output.
+
 **Known tech debt from v1.0:**
 - clear_cache exported but not exposed via CLI command
 - VoiceMap(**data) on cache-hit path should use model_validate()
 - Phases 2-5 never formally verified (VERIFICATION.md missing) — code works per SUMMARY claims and Phase 6 integration testing
+- Sentence-transformer embedding fallback to be removed (LLM handles matching in one pass)
+- PYTORCH_ENABLE_MPS_FALLBACK=1 and MPS device shuffling to be removed with Qwen3-TTS swap
 
 ## Constraints
 
@@ -79,4 +109,4 @@ Hardware: M4 Mac with 16GB unified memory. LLM and TTS run in separate phases wi
 | 64k CBR mono MP3 | ACX/Audible standard for spoken word | ✓ Good |
 
 ---
-*Last updated: 2026-03-04 after v1.0 milestone*
+*Last updated: 2026-03-04 after v1.1 milestone start*

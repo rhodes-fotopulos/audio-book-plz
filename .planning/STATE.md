@@ -5,13 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-03-04)
 
 **Core value:** Feed in an EPUB, get out a multi-voice audiobook where each character has a distinct, fitting voice cloned from a real human recording.
-**Current focus:** Planning next milestone
+**Current focus:** v1.1 Pipeline Quality Improvements
 
 ## Current Position
 
-Phase: v1.0 complete — 6 phases, 17 plans shipped
-Status: MILESTONE COMPLETE
-Last activity: 2026-03-04 — v1.0 MVP archived
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-03-04 — Milestone v1.1 started
 
 ## Accumulated Context
 
@@ -30,5 +31,5 @@ None — v1.0 shipped cleanly after Phase 6 integration fixes.
 ## Session Continuity
 
 Last session: 2026-03-04
-Stopped at: v1.0 milestone archived
-Resume file: N/A — start next milestone with `/gsd:new-milestone`
+Stopped at: v1.1 milestone initialization
+Resume file: N/A
