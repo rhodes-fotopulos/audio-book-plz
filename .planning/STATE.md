@@ -5,32 +5,32 @@
 See: .planning/PROJECT.md (updated 2026-03-03)
 
 **Core value:** Feed in an EPUB, get out a multi-voice audiobook where each character has a distinct, fitting voice cloned from a real human recording.
-**Current focus:** Phase 1 — EPUB Parsing and CLI Skeleton
+**Current focus:** Phase 1 — EPUB Parsing and CLI Skeleton COMPLETE
 
 ## Current Position
 
-Phase: 1 of 5 (EPUB Parsing and CLI Skeleton)
-Plan: 2 of 3 in current phase
-Status: In progress — Plans 01-02 complete, Plan 03 remaining
-Last activity: 2026-03-04 — Plan 01-02 complete (text segmenter TDD with dialogue detection and splitting)
+Phase: 1 of 5 (EPUB Parsing and CLI Skeleton) — COMPLETE
+Plan: 3 of 3 in current phase — all plans complete
+Status: Phase 1 complete — ready to begin Phase 2 (Dialogue Attribution)
+Last activity: 2026-03-04 — Plan 01-03 complete (Typer CLI and pipeline orchestrator)
 
-Progress: [██░░░░░░░░] 13%
+Progress: [████░░░░░░] 20%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 2
-- Average duration: 3 min
-- Total execution time: 0.10 hours
+- Total plans completed: 3
+- Average duration: 2 min
+- Total execution time: 0.12 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 01-epub-parsing-and-cli-skeleton | 2 | 6 min | 3 min |
+| 01-epub-parsing-and-cli-skeleton | 3 | 7 min | 2 min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (2 min), 01-02 (4 min)
+- Last 5 plans: 01-01 (2 min), 01-02 (4 min), 01-03 (1 min)
 - Trend: stable
 
 *Updated after each plan completion*
@@ -51,6 +51,10 @@ Recent decisions affecting current work:
 - Plan 01-02: Short text blocks (<=280 chars) returned as single segment without NLTK splitting — dialogue lines kept together when they fit
 - Plan 01-02: Conservative dialogue tagging — any double quote presence tags block as dialogue; Phase 2 LLM refines attribution
 - Plan 01-02: Plain apostrophe (U+0027) excluded from dialogue detection; only curly single U+2018/U+2019 triggers dialogue
+- Plan 01-03: Book slug derived from EPUB filename (stem.lower, spaces/underscores to hyphens, strip non-alphanumeric, collapse hyphens)
+- Plan 01-03: Stub commands use typer.Exit(code=0) for clean exit and testability
+- Plan 01-03: run_full_pipeline has no confirmation prompt — designed for unattended overnight runs
+- Plan 01-03: .epub extension validated manually in CLI (Typer exists=True validates path existence, not extension)
 
 ### Pending Todos
 
@@ -65,5 +69,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-04
-Stopped at: Completed 01-02-PLAN.md (text segmenter with TDD)
-Resume file: .planning/phases/01-epub-parsing-and-cli-skeleton/01-03-PLAN.md
+Stopped at: Completed 01-03-PLAN.md (Typer CLI and pipeline orchestrator — Phase 1 complete)
+Resume file: .planning/phases/02-dialogue-attribution/ (Phase 2 planning not yet started)
