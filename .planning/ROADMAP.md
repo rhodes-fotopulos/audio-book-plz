@@ -12,7 +12,7 @@ A five-phase sequential pipeline that converts EPUB files into multi-voice audio
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: EPUB Parsing and CLI Skeleton** - Parse any EPUB into clean, speech-ready JSON segments; wire up the CLI entry points for all pipeline phases
+- [x] **Phase 1: EPUB Parsing and CLI Skeleton** - Parse any EPUB into clean, speech-ready JSON segments; wire up the CLI entry points for all pipeline phases (completed 2026-03-04)
 - [ ] **Phase 2: LLM Character Extraction and Speaker Attribution** - Extract character profiles from novel text and attribute every dialogue line to a character via local LLM
 - [ ] **Phase 3: Voice-Character Matching** - Match each character to a real human voice from LibriTTS-P and lock the voice map before synthesis begins
 - [ ] **Phase 4: TTS Synthesis with Checkpoint/Resume** - Synthesize per-segment WAV files using Chatterbox on Apple Silicon MPS with full crash recovery
@@ -86,7 +86,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. EPUB Parsing and CLI Skeleton | 0/3 | Planned | - |
+| 1. EPUB Parsing and CLI Skeleton | 0/3 | Complete    | 2026-03-04 |
 | 2. LLM Character Extraction and Speaker Attribution | 0/TBD | Not started | - |
 | 3. Voice-Character Matching | 0/TBD | Not started | - |
 | 4. TTS Synthesis with Checkpoint/Resume | 0/TBD | Not started | - |
