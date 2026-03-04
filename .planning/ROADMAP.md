@@ -72,7 +72,10 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. After an interrupted run, user can re-run the synthesis command and only unfinished segments are generated — completed WAVs are not regenerated
   3. Synthesis runs on MPS (Apple Silicon GPU) and stays within the 16GB memory budget — Ollama is confirmed unloaded before Chatterbox loads
   4. Progress is reported per-segment and per-chapter throughout the synthesis run so the user knows how much work remains
-**Plans**: TBD
+**Plans**: 3 plans
+- [ ] 04-01-PLAN.md — Data models, TTS engine with MPS support, checkpoint system
+- [ ] 04-02-PLAN.md — Core synthesis loop, progress display, synthesis.log, retry logic
+- [ ] 04-03-PLAN.md — CLI synthesize command, pipeline integration, dry-run mode
 
 ### Phase 5: Audio Assembly and Final Output
 **Goal**: Users get a finished, listenable `audiobook.mp3` with correct silence spacing between segments, normalized volume, and ID3 metadata that audiobook players can read
@@ -95,7 +98,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 1. EPUB Parsing and CLI Skeleton | 0/3 | Complete    | 2026-03-04 |
 | 2. LLM Character Extraction and Speaker Attribution | 3/3 | Complete    | 2026-03-04 |
 | 3. Voice-Character Matching | 3/3 | Complete    | 2026-03-03 |
-| 4. TTS Synthesis with Checkpoint/Resume | 0/TBD | Not started | - |
+| 4. TTS Synthesis with Checkpoint/Resume | 0/3 | Not started | - |
 | 5. Audio Assembly and Final Output | 0/TBD | Not started | - |
 
 ---
