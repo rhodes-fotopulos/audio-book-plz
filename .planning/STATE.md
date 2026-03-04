@@ -59,5 +59,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-03
-Stopped at: Roadmap created and files written — ready to begin Phase 1 planning
-Resume file: None
+Stopped at: Phase 1 context gathered
+Resume file: .planning/phases/01-epub-parsing-and-cli-skeleton/01-CONTEXT.md
