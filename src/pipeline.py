@@ -2,9 +2,10 @@
 
 Coordinates the multi-phase conversion pipeline:
   Phase 1 - Parse:      EPUB -> segments.json
-  Phase 2 - Attribute:  segments.json -> characters.json + attributed.json
+  Phase 2 - Attribute:  segments.json -> characters.json + attributed.json + emotion.json
   Phase 3 - Match:      attributed segments -> voice_map.json
-  Phase 4 - Synthesize: segments -> WAV audio files via Chatterbox TTS
+  Phase 4 - Synthesize: segments -> WAV audio files via Qwen3-TTS (MLX)
+  Phase 4.5 - Verify:   voice consistency check on synthesized segments
   Phase 5 - Assemble:   WAV segments -> chapter MP3s + audiobook.mp3
 """
 

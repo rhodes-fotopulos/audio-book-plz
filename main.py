@@ -252,6 +252,13 @@ def synthesize(
         "--cpu",
         help="Force CPU mode (skip MPS acceleration)",
     ),
+    libritts_audio: Path = typer.Option(
+        None,
+        "--libritts-audio",
+        help="Path to LibriTTS-R audio directory (optional). "
+        "Default: LIBRITTS_R_AUDIO env var",
+        envvar="LIBRITTS_R_AUDIO",
+    ),
 ) -> None:
     """Synthesize audio segments with TTS engine (Qwen3-TTS or Chatterbox)."""
     # Validate prerequisites
@@ -275,6 +282,7 @@ def synthesize(
     run_synthesize(
         book_dir, chapter=chapter, dry_run=dry_run, verbose=verbose,
         cpu=cpu, engine_type=engine,
+        libritts_audio_dir=libritts_audio,
     )
 
 
@@ -335,6 +343,10 @@ def assemble(
     if cover is not None and not cover.exists():
         rprint(f"[red]Error:[/red] Cover image not found: [bold]{cover}[/bold]")
         raise typer.Exit(code=1)
+
+    # Run voice consistency check before assembly
+    rprint("\n[bold green]Voice Consistency Check[/bold green]")
+    run_voice_check(book_dir, voice_threshold=voice_threshold)
 
     run_assemble(
         book_dir, epub_path=epub, title=title, author=author, cover=cover,
