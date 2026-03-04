@@ -2,6 +2,7 @@
 phase: 09-production-polish
 plan: 03
 status: complete
+requirements-completed: [POL-03, POL-04]
 ---
 
 ## Summary
