@@ -92,7 +92,12 @@ Plans:
   4. Phase 9 VERIFICATION.md exists confirming POL-01..05
   5. Phase 9 SUMMARY.md files have `requirements-completed` frontmatter
   6. Stale docstring in pipeline.py referencing Chatterbox is updated
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 10-01-PLAN.md — CLI wiring fixes (assemble --voice-threshold, synthesize --libritts-audio), pipeline.py docstring, Phase 9 SUMMARY frontmatter (Wave 1)
+- [ ] 10-02-PLAN.md — Phase 8 VERIFICATION.md (LLM-01..03, EMO-01..04) (Wave 1)
+- [ ] 10-03-PLAN.md — Phase 9 VERIFICATION.md (POL-01..05) (Wave 2)
 
 ## Progress
 
@@ -110,7 +115,7 @@ Phases execute in numeric order: 7 -> 8 -> 9 -> 10
 | 7. TTS Engine Swap | v1.1 | 3/3 | Complete | 2026-03-04 |
 | 8. LLM Intelligence and Emotion | v1.1 | 3/3 | Complete | 2026-03-04 |
 | 9. Production Polish | v1.1 | 3/3 | Complete | 2026-03-04 |
-| 10. Verification & CLI Wiring Fixes | v1.1 | 0/TBD | Planned | — |
+| 10. Verification & CLI Wiring Fixes | v1.1 | 0/3 | Planned | — |
 
 ---
 *Roadmap created: 2026-03-03*
