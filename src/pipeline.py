@@ -14,6 +14,7 @@ import dataclasses
 import json
 import logging
 import re
+from collections import defaultdict
 from pathlib import Path
 
 import typer
@@ -28,6 +29,7 @@ from src.attribution import (
     preload_model,
     unload_model,
 )
+from src.attribution.emotion import annotate_scene_moods, detect_overrides
 from src.attribution.attributor import CONFIDENCE_FLAG_THRESHOLD
 from src.matching.models import VoiceMap
 from src.matching.orchestrator import run_matching
@@ -186,6 +188,43 @@ def run_attribute(
     attributed_path = book_dir / "attributed.json"
     with open(attributed_path, "w", encoding="utf-8") as f:
         json.dump(attributed_segments, f, indent=2, ensure_ascii=False)
+
+    # --- Emotion annotation ---
+    rprint("[bold cyan]Annotating scene moods and emotions...[/bold cyan]")
+    chapters_for_emotion: dict[int, list[dict]] = defaultdict(list)
+    for seg in attributed_segments:
+        chapters_for_emotion[seg["chapter"]].append(seg)
+
+    chapter_emotions: dict[int, tuple[list, list]] = {}
+    total_scenes = 0
+    total_overrides = 0
+
+    for ch_num in sorted(chapters_for_emotion.keys()):
+        ch_segs = chapters_for_emotion[ch_num]
+        scene_moods = annotate_scene_moods(ch_segs, ch_num)
+        overrides = detect_overrides(ch_segs, scene_moods)
+        chapter_emotions[ch_num] = (scene_moods, overrides)
+        total_scenes += len(scene_moods)
+        total_overrides += len(overrides)
+
+    # Write emotion.json
+    emotion_data = {
+        "chapters": {
+            str(ch_num): {
+                "scenes": [s.model_dump() for s in scene_moods],
+                "overrides": [o.model_dump() for o in overrides],
+            }
+            for ch_num, (scene_moods, overrides) in chapter_emotions.items()
+        }
+    }
+    emotion_path = book_dir / "emotion.json"
+    with open(emotion_path, "w", encoding="utf-8") as f:
+        json.dump(emotion_data, f, indent=2, ensure_ascii=False)
+
+    rprint(
+        f"  Emotion    : [cyan]{total_scenes}[/cyan] scenes annotated, "
+        f"[cyan]{total_overrides}[/cyan] line overrides"
+    )
 
     # --- Unload model ---
     unload_model()
