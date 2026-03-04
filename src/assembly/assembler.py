@@ -71,7 +71,7 @@ def run_assembly(
     voice_map_path = book_dir / "voice_map.json"
     attributed_path = book_dir / "attributed.json"
 
-    if not wavs_dir.exists() or not any(wavs_dir.glob("*.wav")):
+    if not wavs_dir.exists() or not any(wavs_dir.glob("ch*/*.wav")):
         raise FileNotFoundError(
             f"No WAV files found in {wavs_dir}. Run 'synthesize' first."
         )
@@ -184,7 +184,8 @@ def run_assembly(
         segment_wavs: list[tuple[dict, Path]] = []
         for seg in segs:
             seg_id = seg.get("id", 0)
-            wav_path = wavs_dir / f"segment_{seg_id:06d}.wav"
+            ch_num_for_path = seg.get("chapter", 0)
+            wav_path = wavs_dir / f"ch{ch_num_for_path:02d}" / f"seg_{seg_id:04d}.wav"
             if wav_path.exists():
                 segment_wavs.append((seg, wav_path))
             else:
