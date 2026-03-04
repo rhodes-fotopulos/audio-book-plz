@@ -3,7 +3,7 @@
 Coordinates the multi-phase conversion pipeline:
   Phase 1 - Parse:      EPUB -> segments.json
   Phase 2 - Attribute:  segments.json -> characters.json + attributed.json
-  Phase 3 - Match:      attributed segments -> voice assignments (stub)
+  Phase 3 - Match:      attributed segments -> voice_map.json
   Phase 4 - Synthesize: segments -> audio files (stub)
   Phase 5 - Assemble:   audio files -> final MP3 (stub)
 """
@@ -15,8 +15,10 @@ import json
 import re
 from pathlib import Path
 
+import typer
 from rich import print as rprint
 from rich.progress import track
+from rich.table import Table
 
 from src.attribution import (
     attribute_all_segments,
@@ -25,6 +27,7 @@ from src.attribution import (
     unload_model,
 )
 from src.attribution.attributor import CONFIDENCE_FLAG_THRESHOLD
+from src.matching.orchestrator import run_matching
 from src.parser.epub_reader import get_story_chapters, load_epub
 from src.parser.html_cleaner import chapter_to_text_blocks
 from src.parser.segmenter import process_chapter_blocks
@@ -226,6 +229,114 @@ def run_attribute(book_dir: Path) -> tuple[Path, Path]:
     return characters_path, attributed_path
 
 
+def run_match(
+    book_dir: Path,
+    libritts_data_dir: Path,
+    libritts_audio_dir: Path | None = None,
+) -> Path:
+    """End-to-end match phase: attributed segments -> voice_map.json.
+
+    Runs the matching orchestrator, displays a Rich table of assignments,
+    prompts the user for confirmation, and writes voice_map.json.
+
+    Args:
+        book_dir: Book output directory containing characters.json and attributed.json.
+        libritts_data_dir: Path to LibriTTS-P data directory.
+        libritts_audio_dir: Path to LibriTTS-R audio directory (optional).
+
+    Returns:
+        Path to the written voice_map.json file.
+    """
+    voice_map_path = book_dir / "voice_map.json"
+
+    # Run matching pipeline
+    voice_map = run_matching(book_dir, libritts_data_dir, libritts_audio_dir)
+
+    # If voice_map.json already existed, just print summary and return
+    if voice_map_path.exists():
+        rprint(
+            f"\n[bold green]Voice map loaded[/bold green]\n"
+            f"  Characters : [cyan]{len(voice_map.characters)}[/cyan]\n"
+            f"  Narrator   : speaker [cyan]{voice_map.narrator.speaker_id}[/cyan]\n"
+            f"  Output     : [cyan]{voice_map_path}[/cyan]"
+        )
+        return voice_map_path
+
+    # --- Display Rich table ---
+    book_slug = voice_map.book_slug
+    table = Table(title=f'Voice Assignments for "{book_slug}"')
+    table.add_column("#", style="dim", width=4)
+    table.add_column("Character", style="bold")
+    table.add_column("Speaker ID", style="cyan")
+    table.add_column("Method")
+    table.add_column("Conf", justify="right")
+    table.add_column("Reasoning", max_width=50)
+
+    # Narrator row
+    n = voice_map.narrator
+    narrator_style = "yellow" if n.warning else ""
+    table.add_row(
+        "0",
+        "narrator",
+        n.speaker_id,
+        n.method,
+        f"{n.confidence:.2f}",
+        n.reasoning[:50] if len(n.reasoning) > 50 else n.reasoning,
+        style=narrator_style,
+    )
+
+    # Character rows
+    for idx, a in enumerate(voice_map.characters, start=1):
+        label = a.character_name
+        if not a.is_major:
+            label += " (minor)"
+        row_style = "yellow" if a.warning else ""
+        table.add_row(
+            str(idx),
+            label,
+            a.speaker_id,
+            a.method,
+            f"{a.confidence:.2f}",
+            a.reasoning[:50] if len(a.reasoning) > 50 else a.reasoning,
+            style=row_style,
+        )
+
+    rprint()
+    rprint(table)
+
+    # --- Stats ---
+    major_count = sum(1 for a in voice_map.characters if a.is_major)
+    minor_count = len(voice_map.characters) - major_count
+    major_speakers = {a.speaker_id for a in voice_map.characters if a.is_major}
+    minor_speakers = [a.speaker_id for a in voice_map.characters if not a.is_major]
+    unique_minor = len(set(minor_speakers))
+    shared_minor = len(minor_speakers) - unique_minor
+
+    rprint(
+        f"\n  Major: [cyan]{major_count}[/cyan] unique speakers | "
+        f"Minor: [cyan]{minor_count}[/cyan] speakers "
+        f"([cyan]{shared_minor}[/cyan] shared)"
+    )
+
+    # --- User confirmation ---
+    if typer.confirm("Write voice_map.json?", default=True):
+        with open(voice_map_path, "w", encoding="utf-8") as f:
+            json.dump(voice_map.model_dump(), f, indent=2, ensure_ascii=False)
+        rprint(f"\n[bold green]Voice map saved:[/bold green] [cyan]{voice_map_path}[/cyan]")
+    else:
+        rprint(
+            "\n[yellow]Voice map not saved.[/yellow] To customize assignments:\n"
+            "  1. Edit voice_map.json manually (or create from the table above)\n"
+            f"  2. Re-run: python main.py match {book_dir}"
+        )
+        raise typer.Exit(code=0)
+
+    # Unload Ollama model after matching
+    unload_model()
+
+    return voice_map_path
+
+
 def run_full_pipeline(epub_path: Path, output_dir: Path) -> None:
     """Orchestrate all 5 pipeline phases.
 
@@ -244,6 +355,9 @@ def run_full_pipeline(epub_path: Path, output_dir: Path) -> None:
     output_book_dir = output_dir / book_slug
     run_attribute(output_book_dir)
 
-    rprint("[yellow]Phase 3 (match): not yet implemented[/yellow]")
+    rprint(
+        "[yellow]Phase 3 (match): requires --libritts-data path. "
+        "Run separately: python main.py match <book-dir> --libritts-data <path>[/yellow]"
+    )
     rprint("[yellow]Phase 4 (synthesize): not yet implemented[/yellow]")
     rprint("[yellow]Phase 5 (assemble): not yet implemented[/yellow]")

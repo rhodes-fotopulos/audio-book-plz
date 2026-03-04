@@ -5,7 +5,7 @@ from pathlib import Path
 import typer
 from rich import print as rprint
 
-from src.pipeline import run_attribute, run_full_pipeline, run_parse
+from src.pipeline import run_attribute, run_full_pipeline, run_match, run_parse
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -84,10 +84,59 @@ def match(
         ...,
         help="Output directory for a specific book (e.g. output/the-name-of-the-wind/)",
     ),
+    libritts_data: Path = typer.Option(
+        None,
+        help="Path to LibriTTS-P data directory (contains df1_en.csv). "
+        "Default: LIBRITTS_P_DATA env var or ~/.local/share/libritts-p/data",
+        envvar="LIBRITTS_P_DATA",
+    ),
+    libritts_audio: Path = typer.Option(
+        None,
+        help="Path to LibriTTS-R audio directory (optional). "
+        "Default: LIBRITTS_R_AUDIO env var",
+        envvar="LIBRITTS_R_AUDIO",
+    ),
 ) -> None:
-    """Match characters to voice references."""
-    rprint("[yellow]Not yet implemented — coming in Phase 3[/yellow]")
-    raise typer.Exit(code=0)
+    """Match characters to LibriTTS-P voice references."""
+    # Validate book_dir has required files
+    characters_file = book_dir / "characters.json"
+    attributed_file = book_dir / "attributed.json"
+
+    if not characters_file.exists():
+        rprint(
+            f"[red]Error:[/red] characters.json not found in [bold]{book_dir}[/bold]. "
+            "Run 'attribute' first."
+        )
+        raise typer.Exit(code=1)
+
+    if not attributed_file.exists():
+        rprint(
+            f"[red]Error:[/red] attributed.json not found in [bold]{book_dir}[/bold]. "
+            "Run 'attribute' first."
+        )
+        raise typer.Exit(code=1)
+
+    # Resolve libritts_data directory
+    if libritts_data is None:
+        default_data = Path.home() / ".local" / "share" / "libritts-p" / "data"
+        if default_data.exists():
+            libritts_data = default_data
+        else:
+            rprint(
+                "[red]Error:[/red] LibriTTS-P data directory not specified. "
+                "Use --libritts-data or set LIBRITTS_P_DATA env var."
+            )
+            raise typer.Exit(code=1)
+
+    # Validate libritts_data has expected files
+    if not (libritts_data / "df1_en.csv").exists():
+        rprint(
+            f"[red]Error:[/red] df1_en.csv not found in [bold]{libritts_data}[/bold]. "
+            "Is this a valid LibriTTS-P data directory?"
+        )
+        raise typer.Exit(code=1)
+
+    run_match(book_dir, libritts_data, libritts_audio)
 
 
 @app.command()
