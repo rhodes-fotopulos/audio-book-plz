@@ -20,6 +20,8 @@ dependencies = [
     "pyloudnorm>=0.2.0",
     "mutagen>=1.47.0",
     "psutil>=5.9",
+    "pedalboard>=0.9.19",  # Spotify audio effects chain for mastering
+    "Resemblyzer>=0.1.3",  # Speaker embedding verification via GE2E
 ]
 
 [project.optional-dependencies]

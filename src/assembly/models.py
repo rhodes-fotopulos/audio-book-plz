@@ -14,6 +14,62 @@ from dataclasses import dataclass, field
 
 
 # ---------------------------------------------------------------------------
+# Pause configuration (Phase 9 — Gaussian-randomized timing)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class PauseConfig:
+    """Gaussian-randomized pause timing for natural narrator feel.
+
+    Each boundary type has a mean, standard deviation, and min/max clamp.
+    Durations are sampled from a Gaussian distribution clipped to
+    [min, max] range, producing organic timing variation.
+
+    Paragraph breaks use 0.3-0.6s range per user decision.  Speaker
+    changes are slightly longer than paragraphs.  Scene breaks and
+    chapter breaks are the longest pauses.
+    """
+
+    # Sentence break (within paragraph)
+    sentence_mean_ms: float = 350.0
+    sentence_std_ms: float = 50.0
+    sentence_min_ms: float = 250.0
+    sentence_max_ms: float = 500.0
+
+    # Paragraph break (0.3-0.6s per user decision)
+    paragraph_mean_ms: float = 450.0
+    paragraph_std_ms: float = 75.0
+    paragraph_min_ms: float = 300.0
+    paragraph_max_ms: float = 600.0
+
+    # Speaker change (slightly longer than paragraph)
+    speaker_change_mean_ms: float = 600.0
+    speaker_change_std_ms: float = 100.0
+    speaker_change_min_ms: float = 400.0
+    speaker_change_max_ms: float = 900.0
+
+    # Scene break (longer, organic)
+    scene_break_mean_ms: float = 2200.0
+    scene_break_std_ms: float = 300.0
+    scene_break_min_ms: float = 1800.0
+    scene_break_max_ms: float = 3000.0
+
+    # Chapter break (longest)
+    chapter_mean_ms: float = 3500.0
+    chapter_std_ms: float = 400.0
+    chapter_min_ms: float = 2800.0
+    chapter_max_ms: float = 4500.0
+
+    # Post-announcement silence (fixed — rhythmic consistency)
+    post_announcement_silence_ms: int = 800
+
+    # Crossfade duration for segment boundaries (5-10ms range)
+    crossfade_ms: int = 8
+    """Fade-in/fade-out applied to each segment edge to eliminate clicks."""
+
+
+# ---------------------------------------------------------------------------
 # Assembly configuration
 # ---------------------------------------------------------------------------
 
@@ -27,25 +83,32 @@ class AssemblyConfig:
     transitions include a TTS-read announcement before content begins.
     """
 
-    # Silence durations (milliseconds)
+    # Phase 9: Gaussian-randomized pause timing
+    pause_config: PauseConfig = field(default_factory=PauseConfig)
+    """Gaussian-randomized pause timing configuration."""
+
+    # Legacy fixed silence durations (deprecated — use pause_config instead)
     sentence_silence_ms: int = 400
-    """Silence between sentences within a paragraph."""
+    """Deprecated: use pause_config.sentence_mean_ms. Kept for backward compatibility."""
 
     paragraph_silence_ms: int = 900
-    """Silence between paragraphs."""
+    """Deprecated: use pause_config.paragraph_mean_ms. Kept for backward compatibility."""
 
     scene_break_silence_ms: int = 2500
-    """Silence at scene breaks (~2-3s, no audio cue per user decision)."""
+    """Deprecated: use pause_config.scene_break_mean_ms. Kept for backward compatibility."""
 
     chapter_silence_ms: int = 1500
-    """Silence before chapter announcement."""
+    """Deprecated: use pause_config.chapter_mean_ms. Kept for backward compatibility."""
 
     post_announcement_silence_ms: int = 800
     """Silence after chapter announcement before chapter content."""
 
     # MP3 encoding
-    mp3_bitrate: str = "64k"
-    """CBR bitrate for spoken word MP3 (ACX/Audible standard)."""
+    mp3_bitrate: str = "192k"
+    """CBR bitrate for MP3 export (ACX spec: 192kbps or higher)."""
+
+    export_sample_rate: int = 44100
+    """Sample rate for MP3 export (ACX spec: 44.1kHz)."""
 
     # Loudness normalization
     target_lufs: float = -19.0

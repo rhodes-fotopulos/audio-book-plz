@@ -4,16 +4,18 @@ Coordinates the full assembly pipeline:
 1. Validate inputs (wavs/, voice_map.json, attributed.json)
 2. Extract EPUB metadata (title, author, cover)
 3. Generate chapter announcement WAVs via Chatterbox TTS
-4. Per-chapter: concatenate WAVs -> normalize LUFS -> export MP3 -> tag ID3
+4. Per-chapter: concatenate -> effects chain -> normalize LUFS -> export MP3 -> tag ID3
 5. Combine chapter MP3s -> tag with CHAP/CTOC chapter markers
 
-Memory is bounded by processing one chapter at a time.
+Phase 9 upgrade: pedalboard effects chain, descriptive file naming,
+ACX-compliant export (44.1kHz 192kbps CBR).
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import re
 from collections import defaultdict
 from pathlib import Path
 
@@ -24,6 +26,42 @@ from src.assembly.models import AssemblyConfig, AssemblyStats, ChapterInfo
 logger = logging.getLogger(__name__)
 
 
+def _slugify_title(title: str, ch_num: int) -> str:
+    """Produce a clean filename slug from a chapter title.
+
+    Lowercase, replace spaces with hyphens, strip non-alphanumeric
+    (except hyphens), prefix with zero-padded chapter number.
+
+    Args:
+        title: Chapter title string.
+        ch_num: 1-based chapter number.
+
+    Returns:
+        Slug like "01-the-dark-forest" or "03-chapter-3" if title is empty.
+
+    Examples:
+        >>> _slugify_title("The Journey", 1)
+        '01-the-journey'
+        >>> _slugify_title("", 1)
+        '01-chapter-1'
+        >>> _slugify_title("Chapter 3: The Quest!", 3)
+        '03-chapter-3-the-quest'
+    """
+    if not title or not title.strip():
+        return f"{ch_num:02d}-chapter-{ch_num}"
+
+    slug = title.lower().strip()
+    slug = slug.replace(" ", "-")
+    slug = re.sub(r"[^a-z0-9-]", "", slug)
+    slug = re.sub(r"-{2,}", "-", slug)
+    slug = slug.strip("-")
+
+    if not slug:
+        return f"{ch_num:02d}-chapter-{ch_num}"
+
+    return f"{ch_num:02d}-{slug}"
+
+
 def run_assembly(
     book_dir: Path,
     epub_path: Path | None = None,
@@ -31,6 +69,7 @@ def run_assembly(
     author_override: str | None = None,
     cover_override: Path | None = None,
     device: str = "auto",
+    output_dir: Path | None = None,
 ) -> AssemblyStats:
     """Run the full audio assembly pipeline.
 
@@ -42,6 +81,7 @@ def run_assembly(
         author_override: Override author for ID3 tags.
         cover_override: Override cover art image path (JPEG/PNG).
         device: Device for TTS announcement generation ('auto', 'mps', 'cpu').
+        output_dir: If provided, use for MP3 output instead of book_dir.
 
     Returns:
         AssemblyStats with totals.
@@ -52,6 +92,7 @@ def run_assembly(
     """
     from src.assembly.announcer import generate_announcements
     from src.assembly.concatenator import assemble_chapter
+    from src.assembly.effects import apply_effects_chain, create_mastering_chain
     from src.assembly.encoder import (
         check_ffmpeg,
         combine_chapter_mp3s,
@@ -63,6 +104,11 @@ def run_assembly(
 
     config = AssemblyConfig()
     stats = AssemblyStats()
+
+    # Determine output location
+    out_dir = output_dir if output_dir is not None else book_dir
+    if output_dir is not None:
+        out_dir.mkdir(parents=True, exist_ok=True)
 
     # ------------------------------------------------------------------
     # 1. Validate inputs
@@ -165,9 +211,15 @@ def run_assembly(
     rprint(f"  Announcements: [cyan]{len(announcements)}[/cyan] generated")
 
     # ------------------------------------------------------------------
-    # 6. Process each chapter (memory-bounded)
+    # 6. Create mastering effects chain (once, reused for all chapters)
     # ------------------------------------------------------------------
-    chapters_dir = book_dir / "chapters"
+    board = create_mastering_chain()
+    rprint("[bold cyan]Effects chain: NoiseGate -> Compressor -> HighPass(80Hz) -> Limiter(-3dB)[/bold cyan]")
+
+    # ------------------------------------------------------------------
+    # 7. Process each chapter (memory-bounded)
+    # ------------------------------------------------------------------
+    chapters_dir = out_dir / "chapters"
     chapters_dir.mkdir(parents=True, exist_ok=True)
 
     chapter_infos: list[ChapterInfo] = []
@@ -201,15 +253,30 @@ def run_assembly(
         # Concatenate
         chapter_audio = assemble_chapter(segment_wavs, config, announce_wav)
 
+        # Apply effects chain (between concatenation and normalization)
+        chapter_audio, effects_metrics = apply_effects_chain(chapter_audio, board)
+        logger.info(
+            "Ch %d effects: before LUFS=%.1f peak=%.1fdB, after LUFS=%.1f peak=%.1fdB",
+            ch_num,
+            effects_metrics["before_lufs"],
+            effects_metrics["before_peak_db"],
+            effects_metrics["after_lufs"],
+            effects_metrics["after_peak_db"],
+        )
+
         # Normalize
         chapter_audio = normalize_audio(chapter_audio, config.target_lufs)
 
-        # Export MP3
-        mp3_path = chapters_dir / f"chapter_{ch_num:03d}.mp3"
-        export_chapter_mp3(chapter_audio, mp3_path, config.mp3_bitrate)
+        # Export MP3 with descriptive filename
+        display_title = ch_title if ch_title else f"Chapter {ch_num}"
+        slug = _slugify_title(ch_title, ch_num)
+        mp3_path = chapters_dir / f"{slug}.mp3"
+        export_chapter_mp3(
+            chapter_audio, mp3_path,
+            config.mp3_bitrate, config.export_sample_rate,
+        )
 
         # Tag chapter MP3
-        display_title = ch_title if ch_title else f"Chapter {ch_num}"
         tag_chapter(
             mp3_path,
             title=title,
@@ -245,7 +312,7 @@ def run_assembly(
         )
 
     # ------------------------------------------------------------------
-    # 7. Calculate chapter offsets for CHAP frames
+    # 8. Calculate chapter offsets for CHAP frames
     # ------------------------------------------------------------------
     cumulative_ms = 0
     for info in chapter_infos:
@@ -254,12 +321,15 @@ def run_assembly(
         info.end_ms = cumulative_ms
 
     # ------------------------------------------------------------------
-    # 8. Combine into audiobook.mp3
+    # 9. Combine into audiobook.mp3
     # ------------------------------------------------------------------
     rprint("[bold cyan]Combining into audiobook.mp3...[/bold cyan]")
 
-    audiobook_path = book_dir / "audiobook.mp3"
-    combine_chapter_mp3s(chapter_mp3_paths, audiobook_path, config.mp3_bitrate)
+    audiobook_path = out_dir / "audiobook.mp3"
+    combine_chapter_mp3s(
+        chapter_mp3_paths, audiobook_path,
+        config.mp3_bitrate, config.export_sample_rate,
+    )
 
     # Tag combined audiobook with chapter markers
     tag_audiobook(

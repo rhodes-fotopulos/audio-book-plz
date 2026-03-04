@@ -552,6 +552,73 @@ def run_synthesize(
     return wavs_dir
 
 
+def run_voice_check(
+    book_dir: Path,
+    voice_threshold: float = 0.60,
+    engine_type: str = "qwen3",
+    libritts_audio_dir: Path | None = None,
+) -> Path:
+    """Run voice consistency verification on synthesized segments.
+
+    Checks each segment's speaker embedding against its character's
+    reference voice.  Produces a report file.
+
+    Args:
+        book_dir: Book output directory with wavs/ and voice_map.json.
+        voice_threshold: Cosine similarity threshold (0.0-1.0).
+        engine_type: TTS engine type for optional regeneration.
+        libritts_audio_dir: LibriTTS-R audio root for voice references.
+
+    Returns:
+        Path to voice_consistency_report.json.
+    """
+    from src.synthesis.voice_verifier import run_voice_consistency
+
+    # Load voice map and attributed segments
+    voice_map_path = book_dir / "voice_map.json"
+    attributed_path = book_dir / "attributed.json"
+
+    if not voice_map_path.exists():
+        rprint(
+            f"[red]Error:[/red] voice_map.json not found in [bold]{book_dir}[/bold]. "
+            "Run 'match' first."
+        )
+        raise typer.Exit(code=1)
+
+    if not attributed_path.exists():
+        rprint(
+            f"[red]Error:[/red] attributed.json not found in [bold]{book_dir}[/bold]. "
+            "Run 'attribute' first."
+        )
+        raise typer.Exit(code=1)
+
+    with open(voice_map_path, "r", encoding="utf-8") as f:
+        voice_map = VoiceMap.model_validate_json(f.read())
+
+    with open(attributed_path, "r", encoding="utf-8") as f:
+        attributed_segments: list[dict] = json.load(f)
+
+    # Run verification (no regeneration — verification only)
+    report = run_voice_consistency(
+        book_dir,
+        voice_map,
+        attributed_segments,
+        threshold=voice_threshold,
+    )
+
+    # Print Rich summary
+    rprint(
+        f"\n  Checked      : [cyan]{report.segments_checked}[/cyan]\n"
+        f"  Passed       : [cyan]{report.segments_passed}[/cyan]\n"
+        f"  Regenerated  : [cyan]{report.segments_regenerated}[/cyan]\n"
+        f"  Flagged      : [cyan]{len(report.segments_flagged)}[/cyan]\n"
+        f"  Skipped      : [cyan]{report.segments_skipped}[/cyan]"
+    )
+
+    report_path = book_dir / "voice_consistency_report.json"
+    return report_path
+
+
 def run_assemble(
     book_dir: Path,
     epub_path: Path | None = None,
@@ -559,11 +626,12 @@ def run_assemble(
     author: str | None = None,
     cover: Path | None = None,
     cpu: bool = False,
+    output_dir: Path | None = None,
 ) -> Path:
     """End-to-end assembly phase: WAV segments -> chapter MP3s + audiobook.mp3.
 
-    Validates inputs, runs the assembly pipeline (concat, normalize, encode,
-    tag), and prints a Rich completion summary.
+    Validates inputs, runs the assembly pipeline (concat, effects, normalize,
+    encode, tag), and prints a Rich completion summary.
 
     Args:
         book_dir: Book output directory containing wavs/, voice_map.json,
@@ -573,6 +641,7 @@ def run_assemble(
         author: Override author for ID3 tags.
         cover: Override cover art image path (JPEG/PNG).
         cpu: If True, force CPU mode for chapter announcement generation.
+        output_dir: If provided, use for MP3 output instead of book_dir.
 
     Returns:
         Path to the generated audiobook.mp3 file.
@@ -602,11 +671,13 @@ def run_assemble(
         author_override=author,
         cover_override=cover,
         device=device,
+        output_dir=output_dir,
     )
 
     # Completion summary
-    audiobook_path = book_dir / "audiobook.mp3"
-    chapters_dir = book_dir / "chapters"
+    out_dir = output_dir if output_dir is not None else book_dir
+    audiobook_path = out_dir / "audiobook.mp3"
+    chapters_dir = out_dir / "chapters"
 
     def _fmt_duration(seconds: float) -> str:
         hours = int(seconds // 3600)
@@ -662,11 +733,13 @@ def run_full_pipeline(
     cpu: bool = False,
     engine_type: str = "qwen3",
     model_override: str | None = None,
+    voice_threshold: float = 0.60,
+    mp3_output_dir: Path | None = None,
 ) -> None:
-    """Orchestrate all 5 pipeline phases.
+    """Orchestrate all pipeline phases.
 
-    Runs parse -> attribute -> match -> synthesize -> assemble sequentially.
-    Designed for unattended overnight runs — no confirmation prompts.
+    Runs parse -> attribute -> match -> synthesize -> voice check -> assemble
+    sequentially.  Designed for unattended overnight runs.
 
     Args:
         epub_path: Path to the source EPUB file.
@@ -676,6 +749,8 @@ def run_full_pipeline(
         cpu: If True, force CPU mode for synthesis and assembly.
         engine_type: TTS engine to use (``'qwen3'`` or ``'chatterbox'``).
         model_override: If set, force this Ollama model for LLM phases.
+        voice_threshold: Cosine similarity threshold for voice consistency.
+        mp3_output_dir: If provided, MP3 output goes here instead of book dir.
     """
     rprint("\n[bold green]Phase 1: Parse[/bold green]")
     run_parse(epub_path, output_dir)
@@ -704,5 +779,18 @@ def run_full_pipeline(
         libritts_audio_dir=libritts_audio_dir,
     )
 
+    rprint("\n[bold green]Phase 4.5: Voice Consistency[/bold green]")
+    run_voice_check(
+        output_book_dir,
+        voice_threshold=voice_threshold,
+        engine_type=engine_type,
+        libritts_audio_dir=libritts_audio_dir,
+    )
+
     rprint("\n[bold green]Phase 5: Assemble[/bold green]")
-    run_assemble(output_book_dir, epub_path=epub_path, cpu=cpu)
+    run_assemble(
+        output_book_dir,
+        epub_path=epub_path,
+        cpu=cpu,
+        output_dir=mp3_output_dir,
+    )

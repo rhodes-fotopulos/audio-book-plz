@@ -33,17 +33,18 @@ def check_ffmpeg() -> None:
 def export_chapter_mp3(
     audio: AudioSegment,
     output_path: Path,
-    bitrate: str = "64k",
+    bitrate: str = "192k",
+    sample_rate: int = 44100,
 ) -> Path:
-    """Export an AudioSegment to MP3 with spoken-word settings.
+    """Export an AudioSegment to MP3 with ACX-compliant settings.
 
-    Forces mono output for spoken word content.  Uses CBR encoding
-    at the specified bitrate (default 64k, ACX/Audible standard).
+    Forces mono output at 44.1kHz 192kbps CBR for ACX compliance.
 
     Args:
         audio: Chapter AudioSegment to encode.
         output_path: Destination path for the MP3 file.
-        bitrate: CBR bitrate string (e.g., "64k", "128k").
+        bitrate: CBR bitrate string (default "192k" for ACX).
+        sample_rate: Output sample rate (default 44100 for ACX).
 
     Returns:
         The output_path for chaining.
@@ -54,7 +55,7 @@ def export_chapter_mp3(
         str(output_path),
         format="mp3",
         bitrate=bitrate,
-        parameters=["-ac", "1"],  # Force mono for spoken word
+        parameters=["-ac", "1", "-ar", str(sample_rate)],
     )
 
     return output_path
@@ -63,7 +64,8 @@ def export_chapter_mp3(
 def combine_chapter_mp3s(
     chapter_mp3_paths: list[Path],
     output_path: Path,
-    bitrate: str = "64k",
+    bitrate: str = "192k",
+    sample_rate: int = 44100,
 ) -> Path:
     """Concatenate chapter MP3s into a single audiobook MP3.
 
@@ -74,7 +76,8 @@ def combine_chapter_mp3s(
     Args:
         chapter_mp3_paths: Ordered list of chapter MP3 file paths.
         output_path: Destination path for the combined audiobook MP3.
-        bitrate: CBR bitrate string (must match chapter encoding).
+        bitrate: CBR bitrate string (default "192k" for ACX).
+        sample_rate: Output sample rate (default 44100 for ACX).
 
     Returns:
         The output_path for chaining.
@@ -94,7 +97,7 @@ def combine_chapter_mp3s(
         str(output_path),
         format="mp3",
         bitrate=bitrate,
-        parameters=["-ac", "1"],  # Force mono
+        parameters=["-ac", "1", "-ar", str(sample_rate)],
     )
 
     return output_path

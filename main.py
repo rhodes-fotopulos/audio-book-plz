@@ -12,6 +12,7 @@ from src.pipeline import (
     run_match,
     run_parse,
     run_synthesize,
+    run_voice_check,
 )
 
 app = typer.Typer(
@@ -83,6 +84,16 @@ def convert(
         "--cpu",
         help="Force CPU mode (skip MPS acceleration)",
     ),
+    voice_threshold: float = typer.Option(
+        0.60,
+        "--voice-threshold",
+        help="Cosine similarity threshold for voice consistency (0.0-1.0)",
+    ),
+    mp3_dir: Path = typer.Option(
+        None,
+        "--mp3-dir",
+        help="Output directory for MP3 files (default: alongside input EPUB)",
+    ),
 ) -> None:
     """Run full pipeline: parse -> attribute -> match -> synthesize -> assemble."""
     if epub_file.suffix.lower() != ".epub":
@@ -114,6 +125,7 @@ def convert(
     run_full_pipeline(
         epub_file, output_dir, libritts_data, libritts_audio,
         cpu=cpu, engine_type=engine, model_override=model,
+        voice_threshold=voice_threshold, mp3_output_dir=mp3_dir,
     )
 
 
@@ -297,6 +309,16 @@ def assemble(
         "--cpu",
         help="Force CPU mode for chapter announcement generation",
     ),
+    voice_threshold: float = typer.Option(
+        0.60,
+        "--voice-threshold",
+        help="Cosine similarity threshold for voice consistency (0.0-1.0)",
+    ),
+    mp3_dir: Path = typer.Option(
+        None,
+        "--mp3-dir",
+        help="Output directory for MP3 files (default: alongside book dir)",
+    ),
 ) -> None:
     """Assemble WAV segments into chapter MP3s and combined audiobook."""
     # Validate book_dir exists
@@ -315,8 +337,39 @@ def assemble(
         raise typer.Exit(code=1)
 
     run_assemble(
-        book_dir, epub_path=epub, title=title, author=author, cover=cover, cpu=cpu
+        book_dir, epub_path=epub, title=title, author=author, cover=cover,
+        cpu=cpu, output_dir=mp3_dir,
     )
+
+
+@app.command()
+def verify_voices(
+    book_dir: Path = typer.Argument(
+        ...,
+        help="Book output directory (e.g. output/the-name-of-the-wind/)",
+    ),
+    voice_threshold: float = typer.Option(
+        0.60,
+        "--voice-threshold",
+        help="Cosine similarity threshold for voice consistency (0.0-1.0)",
+    ),
+) -> None:
+    """Verify voice consistency of synthesized segments (standalone check)."""
+    if not book_dir.exists():
+        rprint(f"[red]Error:[/red] Directory not found: [bold]{book_dir}[/bold]")
+        raise typer.Exit(code=1)
+
+    wavs_dir = book_dir / "wavs"
+    if not wavs_dir.exists():
+        rprint(
+            f"[red]Error:[/red] No wavs/ directory in [bold]{book_dir}[/bold]. "
+            "Run 'synthesize' first."
+        )
+        raise typer.Exit(code=1)
+
+    rprint("\n[bold green]Voice Consistency Check[/bold green]")
+    report_path = run_voice_check(book_dir, voice_threshold=voice_threshold)
+    rprint(f"\n  Report: [cyan]{report_path}[/cyan]")
 
 
 if __name__ == "__main__":

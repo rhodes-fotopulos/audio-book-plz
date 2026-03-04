@@ -3,7 +3,7 @@
 ## Milestones
 
 - ✅ **v1.0 MVP** — Phases 1-6 (shipped 2026-03-04) — [archive](milestones/v1.0-ROADMAP.md)
-- 🚧 **v1.1 Pipeline Quality Improvements** — Phases 7-9 (in progress)
+- ✅ **v1.1 Pipeline Quality Improvements** — Phases 7-9 (shipped 2026-03-04)
 
 ## Phases
 
@@ -19,13 +19,13 @@
 
 </details>
 
-### 🚧 v1.1 Pipeline Quality Improvements (In Progress)
+### v1.1 Pipeline Quality Improvements (Complete)
 
 **Milestone Goal:** Upgrade the audiobook pipeline with Qwen3-TTS (MLX native), emotional narration control, improved dialogue detection, and professional post-processing to close the gap between "working prototype" and "listenable audiobook."
 
 - [x] **Phase 7: TTS Engine Swap** — Replace Chatterbox with Qwen3-TTS 1.7B via mlx-audio for better voice cloning, larger chunks, and Apple Silicon native inference
 - [x] **Phase 8: LLM Intelligence and Emotion** — Upgrade LLM to 14B, add hybrid dialogue detection with speech-act tagging, and build three-layer emotion system
-- [ ] **Phase 9: Production Polish** — Randomized pauses, professional post-processing chain, voice consistency verification, and ACX-grade export
+- [x] **Phase 9: Production Polish** — Randomized pauses, professional post-processing chain, voice consistency verification, and ACX-grade export
 
 ## Phase Details
 
@@ -75,9 +75,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 09-01-PLAN.md — Gaussian pauses + crossfades + pedalboard mastering effects chain (Wave 1)
-- [ ] 09-02-PLAN.md — Voice consistency verification with Resemblyzer speaker embeddings (Wave 1)
-- [ ] 09-03-PLAN.md — ACX export (44.1kHz 192kbps) + file naming + CLI flags + pipeline wiring (Wave 2)
+- [x] 09-01-PLAN.md — Gaussian pauses + crossfades + pedalboard mastering effects chain (Wave 1)
+- [x] 09-02-PLAN.md — Voice consistency verification with Resemblyzer speaker embeddings (Wave 1)
+- [x] 09-03-PLAN.md — ACX export (44.1kHz 192kbps) + file naming + CLI flags + pipeline wiring (Wave 2)
 
 ## Progress
 
@@ -94,8 +94,8 @@ Phases execute in numeric order: 7 -> 8 -> 9
 | 6. Integration Fixes | v1.0 | 2/2 | Complete | 2026-03-04 |
 | 7. TTS Engine Swap | v1.1 | 3/3 | Complete | 2026-03-04 |
 | 8. LLM Intelligence and Emotion | v1.1 | 3/3 | Complete | 2026-03-04 |
-| 9. Production Polish | v1.1 | 0/3 | Planning complete | - |
+| 9. Production Polish | v1.1 | 3/3 | Complete | 2026-03-04 |
 
 ---
 *Roadmap created: 2026-03-03*
-*Last updated: 2026-03-04 after Phase 8 execution*
+*Last updated: 2026-03-04 after Phase 9 execution*
