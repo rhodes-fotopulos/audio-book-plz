@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A local Python app that converts EPUB files into multi-voice audiobooks (.mp3). Uses a local LLM (Ollama + Qwen 3 8B) for speaker attribution and character analysis, Chatterbox TTS for voice synthesis with voice cloning from real human recordings (LibriTTS-P dataset), and runs entirely on an M4 Mac with 16GB unified memory. Built for personal use — converting a collection of dialogue-heavy fiction (fantasy, thriller, literary) into listenable audiobooks with distinct character voices.
+A local Python app that converts EPUB files into multi-voice audiobooks (.mp3). Uses a local LLM (Ollama + Qwen 3 8B) for speaker attribution and character analysis, Chatterbox TTS for voice synthesis with voice cloning from real human recordings (LibriTTS-P dataset), and runs entirely on an M4 Mac with 16GB unified memory. A single command — `python main.py convert book.epub` — runs the full five-phase pipeline and delivers a finished audiobook with distinct character voices, chapter markers, and ID3 metadata.
 
 ## Core Value
 
@@ -12,49 +12,48 @@ Feed in an EPUB, get out a multi-voice audiobook where each character has a dist
 
 ### Validated
 
-(None yet — ship to validate)
+- ✓ Parse EPUB files into ordered, speech-ready text segments with dialogue/narration tagging — v1.0
+- ✓ Extract character profiles from novel text using local LLM — v1.0
+- ✓ Attribute each dialogue line to the correct speaker using local LLM — v1.0
+- ✓ Match characters to real human voices from LibriTTS-P based on voice traits — v1.0
+- ✓ Synthesize audio for each text segment using Chatterbox TTS with per-character voice cloning — v1.0
+- ✓ Assemble segment audio into a full audiobook MP3 with chapter markers — v1.0
+- ✓ CLI interface for running full pipeline or individual phases — v1.0
+- ✓ Checkpoint/resume support for long-running synthesis — v1.0
+- ✓ Sequential LLM/TTS phases to stay within 16GB memory budget — v1.0
 
 ### Active
 
-- [ ] Parse EPUB files into ordered, speech-ready text segments with dialogue/narration tagging
-- [ ] Extract character profiles from novel text using local LLM
-- [ ] Attribute each dialogue line to the correct speaker using local LLM
-- [ ] Match characters to real human voices from LibriTTS-P based on voice traits
-- [ ] Synthesize audio for each text segment using Chatterbox TTS with per-character voice cloning
-- [ ] Assemble segment audio into chapter MP3s and a full audiobook MP3
-- [ ] CLI interface for running full pipeline or individual phases
-- [ ] Checkpoint/resume support for long-running synthesis
-- [ ] Sequential LLM/TTS phases to stay within 16GB memory budget
+- [ ] Edit attribution JSON by hand and re-run synthesis from that point
+- [ ] Custom pronunciation overrides via YAML for character names and proper nouns
+- [ ] Dry-run that estimates segment count, synthesis time, and disk usage
+- [ ] Preview each character's voice (3-second sample) before full synthesis
+- [ ] Individual chapter MP3 files in addition to full audiobook
+- [ ] M4B export with embedded chapter markers for audiobook player support
+- [ ] Emotion/prosody controls per character type
 
 ### Out of Scope
 
 - GUI or web interface — CLI only for personal use
 - Real-time streaming — batch processing is fine
 - Non-fiction / reference book optimization — optimizing for dialogue-heavy fiction
-- Multi-language support — English only for v1
+- Multi-language support — English only (Qwen 3 8B, Chatterbox, LibriTTS-P are English-optimized)
 - Cloud/API-based TTS — fully local, no external services
 - Mobile app — desktop only
-- User documentation beyond basic README — personal tool
+- Offline mode — real-time is not relevant to batch pipeline
+- Per-chapter voice style variation — creates voice inconsistency
 
 ## Context
 
-**Hardware**: M4 Mac with 16GB unified memory. Apple Silicon's unified architecture means GPU (MPS) shares all 16GB — no separate VRAM. Strategy is to run LLM and TTS in separate phases, never simultaneously, keeping peak usage under ~10GB.
+Shipped v1.0 with 9,515 LOC Python across 6 phases and 17 plans.
+Tech stack: Python 3.11, Ollama + Qwen3 8B, Chatterbox TTS, LibriTTS-P (2,443 speakers), pydub + ffmpeg, sentence-transformers.
+Architecture: Five sequential phases — EPUB parsing → LLM attribution → voice matching → TTS synthesis → audio assembly. Each phase produces intermediate JSON/WAV artifacts enabling checkpoint/resume.
+Hardware: M4 Mac with 16GB unified memory. LLM and TTS run in separate phases with explicit Ollama teardown at the boundary.
 
-**Key libraries**:
-- `ebooklib` + `beautifulsoup4` for EPUB parsing
-- Ollama with `qwen3:8b` (Q4_K_M) for LLM tasks (~5-6GB GPU)
-- Chatterbox TTS for voice synthesis (~4GB MPS) with MPS acceleration and CPU fallback for FFT ops
-- LibriTTS-P dataset (2,443 speakers with human-annotated voice descriptions) for voice references
-- `pydub` + `ffmpeg` for audio assembly and MP3 encoding
-- `sentence-transformers` (`all-MiniLM-L6-v2`) as fallback for voice matching
-
-**Architecture**: Five sequential phases — EPUB parsing, LLM speaker attribution, voice matching, TTS synthesis, audio assembly. Each phase produces intermediate artifacts (JSON, WAV files) enabling checkpoint/resume and debugging individual steps.
-
-**Performance expectations**: ~3-10 seconds per segment with MPS GPU. A typical novel (~80K words, ~4K segments) takes ~3-11 hours of generation. Designed for overnight processing with checkpoint/resume.
-
-**Voice cloning approach**: Chatterbox clones from a ~10-second reference clip of a real human voice. LibriTTS-P provides clean 24kHz audiobook recordings from LibriVox volunteers, each annotated with voice traits (gender, pitch, warmth, etc.). Characters are matched to speakers via LLM trait comparison with embedding similarity as fallback.
-
-**TTS chunking**: Chatterbox has a ~300 character limit per generation call. Segments exceeding this are split at sentence boundaries, keeping chunks under 280 chars.
+**Known tech debt from v1.0:**
+- clear_cache exported but not exposed via CLI command
+- VoiceMap(**data) on cache-hit path should use model_validate()
+- Phases 2-5 never formally verified (VERIFICATION.md missing) — code works per SUMMARY claims and Phase 6 integration testing
 
 ## Constraints
 
@@ -68,12 +67,16 @@ Feed in an EPUB, get out a multi-voice audiobook where each character has a dist
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Chatterbox TTS over other TTS engines | Best open-source voice cloning quality, runs on Apple Silicon with MPS | — Pending |
-| LibriTTS-P for voice references | 2,443 real human voices with annotated traits, CC BY 4.0, clean 24kHz audio | — Pending |
-| Ollama + Qwen 3 8B for LLM | Best instruction-following 8B model for 16GB systems, simple local setup | — Pending |
-| Sequential phases (not concurrent) | Memory safety — never exceed 16GB by running LLM and TTS separately | — Pending |
-| Per-segment WAV intermediates | Enables checkpoint/resume and per-segment debugging at cost of disk space | — Pending |
-| LLM-based voice matching with embedding fallback | LLM understands nuanced character traits better; embeddings handle large casts | — Pending |
+| Chatterbox TTS over other TTS engines | Best open-source voice cloning quality, runs on Apple Silicon with MPS | ✓ Good — MPS works with CPU fallback for FFT |
+| LibriTTS-P for voice references | 2,443 real human voices with annotated traits, CC BY 4.0, clean 24kHz audio | ✓ Good — sufficient speaker variety |
+| Ollama + Qwen 3 8B for LLM | Best instruction-following 8B model for 16GB systems, simple local setup | ✓ Good — structured output reliable with /no_think |
+| Sequential phases (not concurrent) | Memory safety — never exceed 16GB by running LLM and TTS separately | ✓ Good — essential architecture constraint |
+| Per-segment WAV intermediates | Enables checkpoint/resume and per-segment debugging at cost of disk space | ✓ Good — overnight runs survive crashes |
+| LLM-based voice matching with embedding fallback | LLM understands nuanced character traits better; embeddings handle large casts | ✓ Good — two-tier approach covers all cast sizes |
+| Python 3.11 required | Chatterbox pins sub-dependencies that break on 3.12+ | ✓ Good — avoids compatibility issues |
+| Chatterbox standard 500M model only | Turbo variant has Float64 MPS error | ⚠️ Revisit — check if turbo fixed in future versions |
+| LUFS -19.0 normalization target | Audiobook standard -23 to -18, slightly louder for personal listening | ✓ Good — pending real listening test |
+| 64k CBR mono MP3 | ACX/Audible standard for spoken word | ✓ Good |
 
 ---
-*Last updated: 2026-03-03 after initialization*
+*Last updated: 2026-03-04 after v1.0 milestone*
