@@ -55,6 +55,23 @@ def convert(
         Path("output"),
         help="Output directory",
     ),
+    libritts_data: Path = typer.Option(
+        None,
+        help="Path to LibriTTS-P data directory (contains df1_en.csv). "
+        "Default: LIBRITTS_P_DATA env var or ~/.local/share/libritts-p/data",
+        envvar="LIBRITTS_P_DATA",
+    ),
+    libritts_audio: Path = typer.Option(
+        None,
+        help="Path to LibriTTS-R audio directory (optional). "
+        "Default: LIBRITTS_R_AUDIO env var",
+        envvar="LIBRITTS_R_AUDIO",
+    ),
+    cpu: bool = typer.Option(
+        False,
+        "--cpu",
+        help="Force CPU mode (skip MPS acceleration)",
+    ),
 ) -> None:
     """Run full pipeline: parse -> attribute -> match -> synthesize -> assemble."""
     if epub_file.suffix.lower() != ".epub":
@@ -63,7 +80,29 @@ def convert(
         )
         raise typer.Exit(code=1)
 
-    run_full_pipeline(epub_file, output_dir)
+    # Resolve libritts_data directory (same logic as match command)
+    if libritts_data is None:
+        default_data = Path.home() / ".local" / "share" / "libritts-p" / "data"
+        if default_data.exists():
+            libritts_data = default_data
+        else:
+            rprint(
+                "[red]Error:[/red] LibriTTS-P data directory not specified. "
+                "Use --libritts-data or set LIBRITTS_P_DATA env var."
+            )
+            raise typer.Exit(code=1)
+
+    # Validate libritts_data has expected files
+    if not (libritts_data / "df1_en.csv").exists():
+        rprint(
+            f"[red]Error:[/red] df1_en.csv not found in [bold]{libritts_data}[/bold]. "
+            "Is this a valid LibriTTS-P data directory?"
+        )
+        raise typer.Exit(code=1)
+
+    run_full_pipeline(
+        epub_file, output_dir, libritts_data, libritts_audio, cpu=cpu
+    )
 
 
 @app.command()
