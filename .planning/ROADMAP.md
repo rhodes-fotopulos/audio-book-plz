@@ -39,12 +39,12 @@
   3. Text segments sent to TTS are 500-600 characters each, split at paragraph/sentence boundaries, producing noticeably fewer segment-boundary seams
   4. Voice references are 10-15 second SNR-filtered clips with bundled transcripts, and cloned voices sound closer to the reference than v1.0 Chatterbox output
   5. User can set a config flag to fall back to Chatterbox TTS, and old checkpoint files from v1.0 runs are detected and skipped (not silently reused with wrong engine)
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 07-01: TBD
-- [ ] 07-02: TBD
-- [ ] 07-03: TBD
+- [ ] 07-01-PLAN.md — Engine abstraction + Qwen3-TTS integration + Chatterbox refactor (Wave 1)
+- [ ] 07-02-PLAN.md — Text chunker (500-600 chars) + voice reference prep with SNR/transcripts (Wave 1)
+- [ ] 07-03-PLAN.md — Checkpoint versioning + synthesizer integration + fallback wiring (Wave 2)
 
 ### Phase 8: LLM Intelligence and Emotion
 **Goal**: Attribution uses a stronger LLM model, dialogue detection distinguishes speech acts (spoken/thought/shouted/whispered), and a three-layer emotion system feeds post-processing parameters into synthesis
@@ -91,10 +91,10 @@ Phases execute in numeric order: 7 -> 8 -> 9
 | 4. TTS Synthesis | v1.0 | 3/3 | Complete | 2026-03-03 |
 | 5. Audio Assembly | v1.0 | 3/3 | Complete | 2026-03-04 |
 | 6. Integration Fixes | v1.0 | 2/2 | Complete | 2026-03-04 |
-| 7. TTS Engine Swap | v1.1 | 0/? | Not started | - |
+| 7. TTS Engine Swap | v1.1 | 0/3 | Planned | - |
 | 8. LLM Intelligence and Emotion | v1.1 | 0/? | Not started | - |
 | 9. Production Polish | v1.1 | 0/? | Not started | - |
 
 ---
 *Roadmap created: 2026-03-03*
-*Last updated: 2026-03-04 after v1.1 roadmap creation*
+*Last updated: 2026-03-04 after Phase 7 planning*
