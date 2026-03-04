@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import logging
 import re
 from pathlib import Path
 
@@ -33,6 +34,8 @@ from src.parser.epub_reader import get_story_chapters, load_epub
 from src.parser.html_cleaner import chapter_to_text_blocks
 from src.parser.segmenter import process_chapter_blocks
 from src.synthesis.models import SynthesisConfig
+
+logger = logging.getLogger(__name__)
 
 
 def _make_book_slug(epub_path: Path) -> str:
@@ -351,11 +354,14 @@ def run_synthesize(
     dry_run: bool = False,
     verbose: bool = False,
     cpu: bool = False,
+    engine_type: str = "qwen3",
+    libritts_audio_dir: Path | None = None,
 ) -> Path:
     """End-to-end synthesis phase: attributed segments -> WAV audio files.
 
     Loads voice_map.json and attributed.json, then either shows a dry-run
-    estimate or runs full synthesis via Chatterbox TTS with checkpoint/resume.
+    estimate or runs full synthesis via the configured TTS engine with
+    checkpoint/resume.
 
     Args:
         book_dir: Book output directory containing voice_map.json and attributed.json.
@@ -363,6 +369,9 @@ def run_synthesize(
         dry_run: If True, show estimates without generating audio.
         verbose: If True, show per-segment detail during synthesis.
         cpu: If True, force CPU mode (skip MPS acceleration).
+        engine_type: TTS engine to use (``'qwen3'`` or ``'chatterbox'``).
+        libritts_audio_dir: Path to LibriTTS-R audio directory for voice
+            reference preparation with transcripts.
 
     Returns:
         Path to the wavs output directory.
@@ -439,7 +448,16 @@ def run_synthesize(
         return wavs_dir
 
     # ---- Build config ----
-    config = SynthesisConfig(device="cpu" if cpu else "auto")
+    config = SynthesisConfig(
+        device="cpu" if cpu else "auto",
+        engine_type=engine_type,
+    )
+
+    # Handle --cpu with Qwen3 (MLX manages device selection)
+    if cpu and engine_type == "qwen3":
+        logger.info(
+            "MLX manages device selection for Qwen3-TTS (--cpu ignored)"
+        )
 
     # ---- Run synthesis ----
     wavs_dir = book_dir / "wavs"
@@ -449,6 +467,7 @@ def run_synthesize(
         stats = run_synthesis(
             book_dir, voice_map, attributed_segments, config,
             chapter=chapter, verbose=verbose,
+            libritts_root=libritts_audio_dir,
         )
 
         # Print completion summary
@@ -586,6 +605,7 @@ def run_full_pipeline(
     libritts_data_dir: Path,
     libritts_audio_dir: Path | None = None,
     cpu: bool = False,
+    engine_type: str = "qwen3",
 ) -> None:
     """Orchestrate all 5 pipeline phases.
 
@@ -598,6 +618,7 @@ def run_full_pipeline(
         libritts_data_dir: Path to LibriTTS-P data directory (contains df1_en.csv).
         libritts_audio_dir: Path to LibriTTS-R audio directory (optional).
         cpu: If True, force CPU mode for synthesis and assembly.
+        engine_type: TTS engine to use (``'qwen3'`` or ``'chatterbox'``).
     """
     rprint("\n[bold green]Phase 1: Parse[/bold green]")
     run_parse(epub_path, output_dir)
@@ -618,7 +639,12 @@ def run_full_pipeline(
     )
 
     rprint("\n[bold green]Phase 4: Synthesize[/bold green]")
-    run_synthesize(output_book_dir, cpu=cpu)
+    run_synthesize(
+        output_book_dir,
+        cpu=cpu,
+        engine_type=engine_type,
+        libritts_audio_dir=libritts_audio_dir,
+    )
 
     rprint("\n[bold green]Phase 5: Assemble[/bold green]")
     run_assemble(output_book_dir, epub_path=epub_path, cpu=cpu)

@@ -1,6 +1,7 @@
 """Tests for the core synthesis loop (run_synthesis).
 
-All tests use mocked TTSEngine to avoid loading Chatterbox/torch.
+All tests use a mocked engine via create_engine to avoid loading
+Chatterbox/torch or MLX/mlx-audio.
 """
 
 from __future__ import annotations
@@ -9,8 +10,10 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
 
+from src.synthesis.engine_base import AudioResult
 from src.synthesis.models import SynthesisConfig
 
 
@@ -68,34 +71,28 @@ def _make_segments(chapters: int = 2, per_chapter: int = 3) -> list[dict]:
     return segments
 
 
-class FakeTensor:
-    """Minimal tensor-like object for testing."""
-
-    def __init__(self, length: int = 24000):
-        self._length = length
-
-    @property
-    def shape(self):
-        return (1, self._length)
-
-    def __getitem__(self, idx):
-        return self
+def _make_audio_result(duration_s: float = 1.0, sample_rate: int = 24000) -> AudioResult:
+    """Create a minimal AudioResult for testing."""
+    num_samples = int(duration_s * sample_rate)
+    return AudioResult(
+        audio=np.zeros(num_samples, dtype=np.float32),
+        sample_rate=sample_rate,
+        duration_s=duration_s,
+    )
 
 
 def _mock_engine(fail_ids: set | None = None, fail_permanently: set | None = None):
-    """Create a mocked TTSEngine that optionally fails on certain segment IDs."""
+    """Create a mocked TTSEngineBase that optionally fails on certain segment IDs."""
     engine = MagicMock()
-    engine.device = "cpu"
+    engine.engine_name = "mock-engine"
+    engine.engine_version = "0.0.0"
     engine.sample_rate = 24000
-    engine.model = MagicMock()
-    engine.model.sr = 24000
-    engine.config = SynthesisConfig()
 
     fail_ids = fail_ids or set()
     fail_permanently = fail_permanently or set()
     call_counts: dict[str, int] = {}
 
-    def generate_side_effect(text, ref_clip, seg_type=None, **kwargs):
+    def generate_side_effect(text, ref_clip, ref_transcript=None, seg_type=None, **kwargs):
         # Extract seg_id from text
         for fid in fail_permanently:
             if f"segment {fid}" in text:
@@ -108,7 +105,7 @@ def _mock_engine(fail_ids: set | None = None, fail_permanently: set | None = Non
                 if call_counts[key] <= 2:  # fail first 2 attempts
                     raise RuntimeError(f"Transient fail for segment {fid}")
 
-        return FakeTensor(24000)  # 1 second of audio
+        return _make_audio_result()
 
     engine.generate.side_effect = generate_side_effect
     engine.save_wav_atomic.return_value = True
@@ -119,8 +116,8 @@ def _mock_engine(fail_ids: set | None = None, fail_permanently: set | None = Non
     return engine
 
 
-@patch("src.synthesis.synthesizer.TTSEngine")
-def test_run_synthesis_skips_completed_segments(MockEngine, tmp_path):
+@patch("src.synthesis.synthesizer.create_engine")
+def test_run_synthesis_skips_completed_segments(mock_create_engine, tmp_path):
     """Completed segments in checkpoint are not re-generated."""
     from src.matching.models import VoiceMap
     from src.synthesis.checkpoint import (
@@ -138,7 +135,7 @@ def test_run_synthesis_skips_completed_segments(MockEngine, tmp_path):
     config = SynthesisConfig(device="cpu")
 
     # Pre-populate checkpoint with segment 0 completed
-    cp = create_checkpoint("test-book", 3, config)
+    cp = create_checkpoint("test-book", 3, config, engine_name="mock-engine")
     mark_completed(cp, 0, "wavs/ch01/seg_0000.wav", 1.0, 1.5)
     save_checkpoint(cp, book_dir)
 
@@ -149,7 +146,7 @@ def test_run_synthesis_skips_completed_segments(MockEngine, tmp_path):
 
     # Mock engine
     engine = _mock_engine()
-    MockEngine.return_value = engine
+    mock_create_engine.return_value = engine
 
     vm_path = book_dir / "voice_map.json"
     vm = VoiceMap.model_validate_json(vm_path.read_text())
@@ -162,8 +159,8 @@ def test_run_synthesis_skips_completed_segments(MockEngine, tmp_path):
     assert engine.generate.call_count == 2
 
 
-@patch("src.synthesis.synthesizer.TTSEngine")
-def test_run_synthesis_retries_failed_segments(MockEngine, tmp_path):
+@patch("src.synthesis.synthesizer.create_engine")
+def test_run_synthesis_retries_failed_segments(mock_create_engine, tmp_path):
     """Failed segments are retried up to max_retries."""
     from src.matching.models import VoiceMap
     from src.synthesis.synthesizer import run_synthesis
@@ -177,7 +174,7 @@ def test_run_synthesis_retries_failed_segments(MockEngine, tmp_path):
 
     # Segment 1 fails first 2 attempts then succeeds
     engine = _mock_engine(fail_ids={1})
-    MockEngine.return_value = engine
+    mock_create_engine.return_value = engine
 
     vm_path = book_dir / "voice_map.json"
     vm = VoiceMap.model_validate_json(vm_path.read_text())
@@ -189,8 +186,8 @@ def test_run_synthesis_retries_failed_segments(MockEngine, tmp_path):
     assert stats.completed == 3
 
 
-@patch("src.synthesis.synthesizer.TTSEngine")
-def test_failure_threshold_stops_run(MockEngine, tmp_path):
+@patch("src.synthesis.synthesizer.create_engine")
+def test_failure_threshold_stops_run(mock_create_engine, tmp_path):
     """Run stops early when failure rate exceeds threshold."""
     from src.matching.models import VoiceMap
     from src.synthesis.synthesizer import run_synthesis
@@ -222,7 +219,7 @@ def test_failure_threshold_stops_run(MockEngine, tmp_path):
     config = SynthesisConfig(device="cpu", failure_threshold=0.1, max_retries=1)
 
     engine = _mock_engine(fail_permanently=fail_all)
-    MockEngine.return_value = engine
+    mock_create_engine.return_value = engine
 
     vm_obj = VoiceMap.model_validate_json((book_dir / "voice_map.json").read_text())
 
@@ -232,8 +229,8 @@ def test_failure_threshold_stops_run(MockEngine, tmp_path):
     assert stats.completed + stats.failed < 25
 
 
-@patch("src.synthesis.synthesizer.TTSEngine")
-def test_chapter_filter(MockEngine, tmp_path):
+@patch("src.synthesis.synthesizer.create_engine")
+def test_chapter_filter(mock_create_engine, tmp_path):
     """Only segments from the specified chapter are processed."""
     from src.matching.models import VoiceMap
     from src.synthesis.synthesizer import run_synthesis
@@ -246,7 +243,7 @@ def test_chapter_filter(MockEngine, tmp_path):
     config = SynthesisConfig(device="cpu")
 
     engine = _mock_engine()
-    MockEngine.return_value = engine
+    mock_create_engine.return_value = engine
 
     vm_path = book_dir / "voice_map.json"
     vm = VoiceMap.model_validate_json(vm_path.read_text())
@@ -257,8 +254,8 @@ def test_chapter_filter(MockEngine, tmp_path):
     assert engine.generate.call_count == 2
 
 
-@patch("src.synthesis.synthesizer.TTSEngine")
-def test_end_of_run_retry_pass(MockEngine, tmp_path):
+@patch("src.synthesis.synthesizer.create_engine")
+def test_end_of_run_retry_pass(mock_create_engine, tmp_path):
     """Failed segments get a retry pass at end of run."""
     from src.matching.models import VoiceMap
     from src.synthesis.synthesizer import run_synthesis
@@ -274,18 +271,16 @@ def test_end_of_run_retry_pass(MockEngine, tmp_path):
     # but the end-of-run retry pass should succeed
     call_tracker = {"seg2_calls": 0}
     engine = MagicMock()
-    engine.device = "cpu"
+    engine.engine_name = "mock-engine"
+    engine.engine_version = "0.0.0"
     engine.sample_rate = 24000
-    engine.model = MagicMock()
-    engine.model.sr = 24000
-    engine.config = config
 
-    def gen(text, ref_clip, seg_type=None, **kwargs):
+    def gen(text, ref_clip, ref_transcript=None, seg_type=None, **kwargs):
         if "segment 2" in text:
             call_tracker["seg2_calls"] += 1
             if call_tracker["seg2_calls"] <= 1:
                 raise RuntimeError("Transient fail")
-        return FakeTensor(24000)
+        return _make_audio_result()
 
     engine.generate.side_effect = gen
     engine.save_wav_atomic.return_value = True
@@ -293,7 +288,7 @@ def test_end_of_run_retry_pass(MockEngine, tmp_path):
     engine.unload.return_value = None
     engine.load_model.return_value = None
 
-    MockEngine.return_value = engine
+    mock_create_engine.return_value = engine
 
     vm_path = book_dir / "voice_map.json"
     vm = VoiceMap.model_validate_json(vm_path.read_text())
@@ -303,3 +298,56 @@ def test_end_of_run_retry_pass(MockEngine, tmp_path):
     # Segment 2 should have been recovered in the retry pass
     assert stats.failed == 0
     assert stats.completed == 5
+
+
+@patch("src.synthesis.synthesizer.create_engine")
+def test_engine_checkpoint_compatibility(mock_create_engine, tmp_path):
+    """Engine mismatch archives old checkpoint and starts fresh."""
+    from src.matching.models import VoiceMap
+    from src.synthesis.checkpoint import (
+        create_checkpoint,
+        mark_completed,
+        save_checkpoint,
+    )
+    from src.synthesis.synthesizer import run_synthesis
+
+    book_dir = tmp_path / "book"
+    book_dir.mkdir()
+    _make_voice_map(book_dir)
+
+    segments = _make_segments(chapters=1, per_chapter=2)
+    config = SynthesisConfig(device="cpu")
+
+    # Create a checkpoint from a different engine
+    cp = create_checkpoint(
+        "test-book", 2, config,
+        engine_name="chatterbox-500m",
+        engine_version="0.1.6",
+        engine_library="chatterbox-tts",
+    )
+    mark_completed(cp, 0, "wavs/ch01/seg_0000.wav", 1.0, 1.5)
+    save_checkpoint(cp, book_dir)
+
+    # Create old WAV
+    wav_dir = book_dir / "wavs" / "ch01"
+    wav_dir.mkdir(parents=True)
+    (wav_dir / "seg_0000.wav").write_bytes(b"\x00" * 100)
+
+    # Mock engine with different name
+    engine = _mock_engine()
+    engine.engine_name = "qwen3-tts-1.7b"
+    engine.engine_version = "0.3.1"
+    mock_create_engine.return_value = engine
+
+    vm_path = book_dir / "voice_map.json"
+    vm = VoiceMap.model_validate_json(vm_path.read_text())
+
+    stats = run_synthesis(book_dir, vm, segments, config, verbose=False)
+
+    # Old checkpoint was archived, so all segments are synthesized fresh
+    assert stats.skipped_cached == 0
+    assert stats.completed == 2
+
+    # Archive directory should exist
+    archive_dir = book_dir / "checkpoint_archive"
+    assert archive_dir.exists()

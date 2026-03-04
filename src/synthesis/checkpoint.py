@@ -6,6 +6,10 @@ atomic writes to prevent checkpoint corruption during crashes.
 
 The checkpoint file lives at ``book_dir/checkpoint.json`` alongside
 the ``wavs/`` directory.
+
+Engine versioning (v1.1): checkpoints record the TTS engine name,
+version, and library.  On resume, engine mismatches trigger auto-archive
+of old checkpoints and WAVs so synthesis starts fresh.
 """
 
 from __future__ import annotations
@@ -13,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -32,6 +37,9 @@ def create_checkpoint(
     book_slug: str,
     total_segments: int,
     config: SynthesisConfig,
+    engine_name: str = "chatterbox-500m",
+    engine_version: str = "unknown",
+    engine_library: str = "chatterbox-tts",
 ) -> dict:
     """Create a fresh checkpoint dict for a new synthesis run.
 
@@ -39,6 +47,9 @@ def create_checkpoint(
         book_slug: Book identifier (from EPUB filename).
         total_segments: Total number of segments to synthesise.
         config: Synthesis configuration snapshot.
+        engine_name: TTS engine identifier (e.g. ``'qwen3-tts-1.7b'``).
+        engine_version: Engine library version string.
+        engine_library: Engine library name (e.g. ``'mlx-audio'``).
 
     Returns:
         Checkpoint dict ready for ``save_checkpoint()``.
@@ -51,12 +62,17 @@ def create_checkpoint(
         "total_segments": total_segments,
         "completed": {},
         "failed": {},
+        "engine": {
+            "name": engine_name,
+            "version": engine_version,
+            "library": engine_library,
+        },
         "config": {
             "narration_exaggeration": config.narration_exaggeration,
             "dialogue_exaggeration": config.dialogue_exaggeration,
             "cfg_weight": config.cfg_weight,
             "device": config.device,
-            "model": "chatterbox-500m",
+            "model": engine_name,
         },
     }
 
@@ -78,13 +94,94 @@ def save_checkpoint(checkpoint: dict, checkpoint_dir: Path) -> None:
 
 
 def load_checkpoint(checkpoint_dir: Path) -> dict | None:
-    """Load an existing checkpoint from disk, or return None."""
+    """Load an existing checkpoint from disk, or return None.
+
+    If the checkpoint lacks an ``engine`` key, it is a legacy v1.0
+    checkpoint created before engine versioning was added.
+    """
     target = checkpoint_dir / CHECKPOINT_FILENAME
     if not target.exists():
         return None
 
     with open(target, "r", encoding="utf-8") as f:
-        return json.load(f)
+        cp = json.load(f)
+
+    if "engine" not in cp:
+        logger.info(
+            "Loaded legacy v1.0 checkpoint (no engine metadata) from %s",
+            target,
+        )
+
+    return cp
+
+
+# ---------------------------------------------------------------------------
+# Engine compatibility
+# ---------------------------------------------------------------------------
+
+
+def check_engine_compatibility(
+    checkpoint: dict,
+    engine_name: str,
+) -> tuple[bool, str]:
+    """Check whether an existing checkpoint was created by the same engine.
+
+    Args:
+        checkpoint: Loaded checkpoint dict.
+        engine_name: Current engine name (e.g. ``'qwen3-tts-1.7b'``).
+
+    Returns:
+        Tuple of ``(compatible, reason)``.  If compatible, reason is ``""``.
+    """
+    engine_info = checkpoint.get("engine")
+    if engine_info is None:
+        return False, "Legacy v1.0 checkpoint (no engine metadata)"
+
+    cp_engine = engine_info.get("name", "unknown")
+    if cp_engine == engine_name:
+        return True, ""
+
+    return (
+        False,
+        f"Checkpoint uses {cp_engine}, current engine is {engine_name}",
+    )
+
+
+def archive_checkpoint(book_dir: Path) -> Path | None:
+    """Archive an existing checkpoint and WAVs to a backup folder.
+
+    Creates ``book_dir/checkpoint_archive/`` and moves the checkpoint
+    and WAVs directory into it with a timestamp suffix.  This allows
+    a fresh synthesis run without losing the old data.
+
+    Returns:
+        Path to the archive directory, or None if nothing to archive.
+    """
+    checkpoint_path = book_dir / CHECKPOINT_FILENAME
+    wavs_dir = book_dir / "wavs"
+
+    if not checkpoint_path.exists() and not wavs_dir.exists():
+        return None
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    archive_dir = book_dir / "checkpoint_archive"
+    archive_dir.mkdir(parents=True, exist_ok=True)
+
+    if checkpoint_path.exists():
+        dest = archive_dir / f"checkpoint_{timestamp}.json"
+        shutil.move(str(checkpoint_path), str(dest))
+        logger.info("Archived checkpoint to %s", dest)
+
+    if wavs_dir.exists():
+        dest = archive_dir / f"wavs_{timestamp}"
+        shutil.move(str(wavs_dir), str(dest))
+        logger.info("Archived WAVs to %s", dest)
+
+    logger.info(
+        "Archived old checkpoint and WAVs to %s (engine mismatch)",
+        archive_dir,
+    )
+    return archive_dir
 
 
 # ---------------------------------------------------------------------------

@@ -67,6 +67,11 @@ def convert(
         "Default: LIBRITTS_R_AUDIO env var",
         envvar="LIBRITTS_R_AUDIO",
     ),
+    engine: str = typer.Option(
+        "qwen3",
+        "--engine",
+        help="TTS engine: qwen3 (MLX, primary) or chatterbox (PyTorch, fallback)",
+    ),
     cpu: bool = typer.Option(
         False,
         "--cpu",
@@ -101,7 +106,8 @@ def convert(
         raise typer.Exit(code=1)
 
     run_full_pipeline(
-        epub_file, output_dir, libritts_data, libritts_audio, cpu=cpu
+        epub_file, output_dir, libritts_data, libritts_audio,
+        cpu=cpu, engine_type=engine,
     )
 
 
@@ -206,13 +212,18 @@ def synthesize(
         "--verbose",
         help="Show per-segment detail during synthesis",
     ),
+    engine: str = typer.Option(
+        "qwen3",
+        "--engine",
+        help="TTS engine: qwen3 (MLX, primary) or chatterbox (PyTorch, fallback)",
+    ),
     cpu: bool = typer.Option(
         False,
         "--cpu",
         help="Force CPU mode (skip MPS acceleration)",
     ),
 ) -> None:
-    """Synthesize audio segments with Chatterbox TTS."""
+    """Synthesize audio segments with TTS engine (Qwen3-TTS or Chatterbox)."""
     # Validate prerequisites
     voice_map_file = book_dir / "voice_map.json"
     attributed_file = book_dir / "attributed.json"
@@ -232,7 +243,8 @@ def synthesize(
         raise typer.Exit(code=1)
 
     run_synthesize(
-        book_dir, chapter=chapter, dry_run=dry_run, verbose=verbose, cpu=cpu
+        book_dir, chapter=chapter, dry_run=dry_run, verbose=verbose,
+        cpu=cpu, engine_type=engine,
     )
 
 
