@@ -23,7 +23,7 @@
 
 **Milestone Goal:** Upgrade the audiobook pipeline with Qwen3-TTS (MLX native), emotional narration control, improved dialogue detection, and professional post-processing to close the gap between "working prototype" and "listenable audiobook."
 
-- [ ] **Phase 7: TTS Engine Swap** — Replace Chatterbox with Qwen3-TTS 1.7B via mlx-audio for better voice cloning, larger chunks, and Apple Silicon native inference
+- [x] **Phase 7: TTS Engine Swap** — Replace Chatterbox with Qwen3-TTS 1.7B via mlx-audio for better voice cloning, larger chunks, and Apple Silicon native inference
 - [ ] **Phase 8: LLM Intelligence and Emotion** — Upgrade LLM to 14B, add hybrid dialogue detection with speech-act tagging, and build three-layer emotion system
 - [ ] **Phase 9: Production Polish** — Randomized pauses, professional post-processing chain, voice consistency verification, and ACX-grade export
 
@@ -42,9 +42,9 @@
 **Plans**: 3 plans
 
 Plans:
-- [ ] 07-01-PLAN.md — Engine abstraction + Qwen3-TTS integration + Chatterbox refactor (Wave 1)
-- [ ] 07-02-PLAN.md — Text chunker (500-600 chars) + voice reference prep with SNR/transcripts (Wave 1)
-- [ ] 07-03-PLAN.md — Checkpoint versioning + synthesizer integration + fallback wiring (Wave 2)
+- [x] 07-01-PLAN.md — Engine abstraction + Qwen3-TTS integration + Chatterbox refactor (Wave 1)
+- [x] 07-02-PLAN.md — Text chunker (500-600 chars) + voice reference prep with SNR/transcripts (Wave 1)
+- [x] 07-03-PLAN.md — Checkpoint versioning + synthesizer integration + fallback wiring (Wave 2)
 
 ### Phase 8: LLM Intelligence and Emotion
 **Goal**: Attribution uses a stronger LLM model, dialogue detection distinguishes speech acts (spoken/thought/shouted/whispered), and a three-layer emotion system feeds post-processing parameters into synthesis
@@ -91,10 +91,10 @@ Phases execute in numeric order: 7 -> 8 -> 9
 | 4. TTS Synthesis | v1.0 | 3/3 | Complete | 2026-03-03 |
 | 5. Audio Assembly | v1.0 | 3/3 | Complete | 2026-03-04 |
 | 6. Integration Fixes | v1.0 | 2/2 | Complete | 2026-03-04 |
-| 7. TTS Engine Swap | v1.1 | 0/3 | Planned | - |
+| 7. TTS Engine Swap | v1.1 | 3/3 | Executed | 2026-03-04 |
 | 8. LLM Intelligence and Emotion | v1.1 | 0/? | Not started | - |
 | 9. Production Polish | v1.1 | 0/? | Not started | - |
 
 ---
 *Roadmap created: 2026-03-03*
-*Last updated: 2026-03-04 after Phase 7 planning*
+*Last updated: 2026-03-04 after Phase 7 execution*
