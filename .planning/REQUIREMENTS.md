@@ -78,30 +78,30 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| TTS-01 | — | Pending |
-| TTS-02 | — | Pending |
-| TTS-03 | — | Pending |
-| TTS-04 | — | Pending |
-| TTS-05 | — | Pending |
-| TTS-06 | — | Pending |
-| LLM-01 | — | Pending |
-| LLM-02 | — | Pending |
-| LLM-03 | — | Pending |
-| EMO-01 | — | Pending |
-| EMO-02 | — | Pending |
-| EMO-03 | — | Pending |
-| EMO-04 | — | Pending |
-| POL-01 | — | Pending |
-| POL-02 | — | Pending |
-| POL-03 | — | Pending |
-| POL-04 | — | Pending |
-| POL-05 | — | Pending |
+| TTS-01 | Phase 7 | Pending |
+| TTS-02 | Phase 7 | Pending |
+| TTS-03 | Phase 7 | Pending |
+| TTS-04 | Phase 7 | Pending |
+| TTS-05 | Phase 7 | Pending |
+| TTS-06 | Phase 7 | Pending |
+| LLM-01 | Phase 8 | Pending |
+| LLM-02 | Phase 8 | Pending |
+| LLM-03 | Phase 8 | Pending |
+| EMO-01 | Phase 8 | Pending |
+| EMO-02 | Phase 8 | Pending |
+| EMO-03 | Phase 8 | Pending |
+| EMO-04 | Phase 8 | Pending |
+| POL-01 | Phase 9 | Pending |
+| POL-02 | Phase 9 | Pending |
+| POL-03 | Phase 9 | Pending |
+| POL-04 | Phase 9 | Pending |
+| POL-05 | Phase 9 | Pending |
 
 **Coverage:**
 - v1.1 requirements: 18 total
-- Mapped to phases: 0
-- Unmapped: 18 ⚠️
+- Mapped to phases: 18
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-04*
-*Last updated: 2026-03-04 after initial definition*
+*Last updated: 2026-03-04 after roadmap creation — all 18 requirements mapped to phases*
