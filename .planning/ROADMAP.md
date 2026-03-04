@@ -55,12 +55,12 @@ Plans:
   2. Every dialogue line in the output JSON is tagged with a speech-act subtype (spoken, thought, shouted, or whispered), and hybrid regex+LLM detection catches cases that v1.0 regex missed (e.g., indirect dialogue, internal monologue)
   3. Each character in the extraction output has a voice_baseline field describing their default speaking style, each scene has a mood+intensity annotation, and only lines where emotion sharply breaks from scene mood get line-level overrides
   4. Emotion data reaches synthesis as post-processing parameters (volume and speed adjustments keyed to speech-act tags), not as TTS instruct prompts — whispered lines are quieter, shouted lines are louder
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 08-01: TBD
-- [ ] 08-02: TBD
-- [ ] 08-03: TBD
+- [ ] 08-01-PLAN.md — LLM model upgrade (14B/8B) + keep-alive management + model lifecycle (Wave 1)
+- [ ] 08-02-PLAN.md — Hybrid dialogue detection with speech-act tagging + voice baseline extraction (Wave 1)
+- [ ] 08-03-PLAN.md — Three-layer emotion system (scene mood + line overrides) + post-processing integration (Wave 2)
 
 ### Phase 9: Production Polish
 **Goal**: Assembled audiobooks sound professionally mastered with natural pause timing, clean audio processing, verified voice consistency, and ACX-compliant export format
@@ -92,7 +92,7 @@ Phases execute in numeric order: 7 -> 8 -> 9
 | 5. Audio Assembly | v1.0 | 3/3 | Complete | 2026-03-04 |
 | 6. Integration Fixes | v1.0 | 2/2 | Complete | 2026-03-04 |
 | 7. TTS Engine Swap | v1.1 | 3/3 | Complete | 2026-03-04 |
-| 8. LLM Intelligence and Emotion | v1.1 | 0/? | Not started | - |
+| 8. LLM Intelligence and Emotion | v1.1 | 0/3 | Planned | - |
 | 9. Production Polish | v1.1 | 0/? | Not started | - |
 
 ---
