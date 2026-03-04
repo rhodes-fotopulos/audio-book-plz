@@ -68,6 +68,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-04
-Stopped at: Completed 01-03-PLAN.md (Typer CLI and pipeline orchestrator — Phase 1 complete)
-Resume file: .planning/phases/02-dialogue-attribution/ (Phase 2 planning not yet started)
+Last session: 2026-03-03
+Stopped at: Phase 2 context gathered
+Resume file: .planning/phases/02-llm-character-extraction-and-speaker-attribution/02-CONTEXT.md
