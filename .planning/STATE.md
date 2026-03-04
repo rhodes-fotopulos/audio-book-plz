@@ -5,32 +5,33 @@
 See: .planning/PROJECT.md (updated 2026-03-03)
 
 **Core value:** Feed in an EPUB, get out a multi-voice audiobook where each character has a distinct, fitting voice cloned from a real human recording.
-**Current focus:** Phase 1 — EPUB Parsing and CLI Skeleton COMPLETE
+**Current focus:** Phase 2 — LLM Character Extraction and Speaker Attribution COMPLETE
 
 ## Current Position
 
-Phase: 1 of 5 (EPUB Parsing and CLI Skeleton) — COMPLETE
+Phase: 2 of 5 (LLM Character Extraction and Speaker Attribution) — COMPLETE
 Plan: 3 of 3 in current phase — all plans complete
-Status: Phase 1 complete — ready to begin Phase 2 (Dialogue Attribution)
-Last activity: 2026-03-04 — Plan 01-03 complete (Typer CLI and pipeline orchestrator)
+Status: Phase 2 complete — ready to begin Phase 3 (Voice-Character Matching)
+Last activity: 2026-03-04 — Plan 02-03 complete (Speaker attribution, pipeline/CLI wiring)
 
-Progress: [████░░░░░░] 20%
+Progress: [████████░░] 40%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 3
+- Total plans completed: 6
 - Average duration: 2 min
-- Total execution time: 0.12 hours
+- Total execution time: 0.23 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01-epub-parsing-and-cli-skeleton | 3 | 7 min | 2 min |
+| 02-llm-character-extraction-and-speaker-attribution | 3 | 7 min | 2 min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (2 min), 01-02 (4 min), 01-03 (1 min)
+- Last 5 plans: 01-02 (4 min), 01-03 (1 min), 02-01 (2 min), 02-02 (2 min), 02-03 (3 min)
 - Trend: stable
 
 *Updated after each plan completion*
@@ -55,6 +56,16 @@ Recent decisions affecting current work:
 - Plan 01-03: Stub commands use typer.Exit(code=0) for clean exit and testability
 - Plan 01-03: run_full_pipeline has no confirmation prompt — designed for unattended overnight runs
 - Plan 01-03: .epub extension validated manually in CLI (Typer exists=True validates path existence, not extension)
+- Plan 02-01: Pydantic strict mode on value objects but not container models — balances type safety with LLM flexibility
+- Plan 02-01: Temperature 0 with format constraint — grammar-constrained decoding handles determinism
+- Plan 02-01: Conservative 1:4 char-to-token ratio for context window budgeting
+- Plan 02-01: Cache keys include pass_name prefix to differentiate extraction vs attribution
+- Plan 02-02: [TYPE] prefixes on chapter text help LLM distinguish dialogue from narration
+- Plan 02-02: MIN_SUBSTRING_LENGTH=3 for alias matching prevents false positives on short strings
+- Plan 02-02: Surname-only check prevents merging "Mr. Bennet" and "Mrs. Bennet"
+- Plan 02-03: REGISTRY_BUDGET_TOKENS=2000 reserves space for character registry in attribution prompt
+- Plan 02-03: CONFIDENCE_FLAG_THRESHOLD=0.7 — attributions below this flagged in stats
+- Plan 02-03: LLM failure fallback: speaker="unknown", confidence=0.0 rather than crashing
 
 ### Pending Todos
 
@@ -68,6 +79,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-03
-Stopped at: Phase 2 context gathered
-Resume file: .planning/phases/02-llm-character-extraction-and-speaker-attribution/02-CONTEXT.md
+Last session: 2026-03-04
+Stopped at: Completed 02-03-PLAN.md — Phase 2 complete
+Resume file: None

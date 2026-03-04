@@ -90,11 +90,11 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. EPUB Parsing and CLI Skeleton | 0/3 | Complete    | 2026-03-04 |
-| 2. LLM Character Extraction and Speaker Attribution | 0/3 | Not started | - |
+| 2. LLM Character Extraction and Speaker Attribution | 3/3 | Complete    | 2026-03-04 |
 | 3. Voice-Character Matching | 0/TBD | Not started | - |
 | 4. TTS Synthesis with Checkpoint/Resume | 0/TBD | Not started | - |
 | 5. Audio Assembly and Final Output | 0/TBD | Not started | - |
 
 ---
 *Roadmap created: 2026-03-03*
-*Last updated: 2026-03-03 after Phase 2 planning*
+*Last updated: 2026-03-04 after Phase 2 execution complete*
