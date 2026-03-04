@@ -235,6 +235,7 @@ def run_match(
     book_dir: Path,
     libritts_data_dir: Path,
     libritts_audio_dir: Path | None = None,
+    auto_confirm: bool = False,
 ) -> Path:
     """End-to-end match phase: attributed segments -> voice_map.json.
 
@@ -245,6 +246,7 @@ def run_match(
         book_dir: Book output directory containing characters.json and attributed.json.
         libritts_data_dir: Path to LibriTTS-P data directory.
         libritts_audio_dir: Path to LibriTTS-R audio directory (optional).
+        auto_confirm: If True, skip interactive confirmation (pipeline mode).
 
     Returns:
         Path to the written voice_map.json file.
@@ -320,8 +322,12 @@ def run_match(
         f"([cyan]{shared_minor}[/cyan] shared)"
     )
 
-    # --- User confirmation ---
-    if typer.confirm("Write voice_map.json?", default=True):
+    # --- User confirmation (skip in pipeline mode) ---
+    if auto_confirm:
+        with open(voice_map_path, "w", encoding="utf-8") as f:
+            json.dump(voice_map.model_dump(), f, indent=2, ensure_ascii=False)
+        rprint(f"\n[bold green]Voice map saved:[/bold green] [cyan]{voice_map_path}[/cyan]")
+    elif typer.confirm("Write voice_map.json?", default=True):
         with open(voice_map_path, "w", encoding="utf-8") as f:
             json.dump(voice_map.model_dump(), f, indent=2, ensure_ascii=False)
         rprint(f"\n[bold green]Voice map saved:[/bold green] [cyan]{voice_map_path}[/cyan]")
@@ -503,7 +509,7 @@ def run_assemble(
         raise typer.Exit(code=1)
 
     wavs_dir = book_dir / "wavs"
-    if not wavs_dir.exists() or not any(wavs_dir.glob("*.wav")):
+    if not wavs_dir.exists() or not any(wavs_dir.glob("ch*/*.wav")):
         rprint(
             f"[red]Error:[/red] No WAV files found in [bold]{wavs_dir}[/bold]. "
             "Run 'synthesize' first."
@@ -574,33 +580,45 @@ def run_assemble(
     return audiobook_path
 
 
-def run_full_pipeline(epub_path: Path, output_dir: Path) -> None:
+def run_full_pipeline(
+    epub_path: Path,
+    output_dir: Path,
+    libritts_data_dir: Path,
+    libritts_audio_dir: Path | None = None,
+    cpu: bool = False,
+) -> None:
     """Orchestrate all 5 pipeline phases.
 
-    Phases 1 (parse) and 2 (attribute) are fully implemented.
-    Phases 3-5 print stub messages and return immediately.
+    Runs parse -> attribute -> match -> synthesize -> assemble sequentially.
     Designed for unattended overnight runs — no confirmation prompts.
 
     Args:
         epub_path: Path to the source EPUB file.
         output_dir: Root output directory.
+        libritts_data_dir: Path to LibriTTS-P data directory (contains df1_en.csv).
+        libritts_audio_dir: Path to LibriTTS-R audio directory (optional).
+        cpu: If True, force CPU mode for synthesis and assembly.
     """
+    rprint("\n[bold green]Phase 1: Parse[/bold green]")
     run_parse(epub_path, output_dir)
 
     # Derive the book output directory from the epub path
     book_slug = _make_book_slug(epub_path)
     output_book_dir = output_dir / book_slug
+
+    rprint("\n[bold green]Phase 2: Attribute[/bold green]")
     run_attribute(output_book_dir)
 
-    rprint(
-        "[yellow]Phase 3 (match): requires --libritts-data path. "
-        "Run separately: python main.py match <book-dir> --libritts-data <path>[/yellow]"
+    rprint("\n[bold green]Phase 3: Match[/bold green]")
+    run_match(
+        output_book_dir,
+        libritts_data_dir,
+        libritts_audio_dir,
+        auto_confirm=True,  # No interactive prompt in pipeline mode
     )
-    rprint(
-        "[yellow]Phase 4 (synthesize): requires voice_map.json from match phase. "
-        "Run separately: python main.py synthesize <book-dir>[/yellow]"
-    )
-    rprint(
-        "[yellow]Phase 5 (assemble): requires WAV files from synthesize phase. "
-        "Run separately: python main.py assemble <book-dir>[/yellow]"
-    )
+
+    rprint("\n[bold green]Phase 4: Synthesize[/bold green]")
+    run_synthesize(output_book_dir, cpu=cpu)
+
+    rprint("\n[bold green]Phase 5: Assemble[/bold green]")
+    run_assemble(output_book_dir, epub_path=epub_path, cpu=cpu)
