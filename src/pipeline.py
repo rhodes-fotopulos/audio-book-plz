@@ -5,7 +5,7 @@ Coordinates the multi-phase conversion pipeline:
   Phase 2 - Attribute:  segments.json -> characters.json + attributed.json
   Phase 3 - Match:      attributed segments -> voice_map.json
   Phase 4 - Synthesize: segments -> WAV audio files via Chatterbox TTS
-  Phase 5 - Assemble:   audio files -> final MP3 (stub)
+  Phase 5 - Assemble:   WAV segments -> chapter MP3s + audiobook.mp3
 """
 
 from __future__ import annotations
@@ -472,6 +472,108 @@ def run_synthesize(
     return wavs_dir
 
 
+def run_assemble(
+    book_dir: Path,
+    epub_path: Path | None = None,
+    title: str | None = None,
+    author: str | None = None,
+    cover: Path | None = None,
+    cpu: bool = False,
+) -> Path:
+    """End-to-end assembly phase: WAV segments -> chapter MP3s + audiobook.mp3.
+
+    Validates inputs, runs the assembly pipeline (concat, normalize, encode,
+    tag), and prints a Rich completion summary.
+
+    Args:
+        book_dir: Book output directory containing wavs/, voice_map.json,
+            and attributed.json.
+        epub_path: Optional source EPUB for metadata extraction.
+        title: Override book title for ID3 tags.
+        author: Override author for ID3 tags.
+        cover: Override cover art image path (JPEG/PNG).
+        cpu: If True, force CPU mode for chapter announcement generation.
+
+    Returns:
+        Path to the generated audiobook.mp3 file.
+    """
+    # Validate inputs
+    if not book_dir.exists():
+        rprint(f"[red]Error:[/red] Directory not found: [bold]{book_dir}[/bold]")
+        raise typer.Exit(code=1)
+
+    wavs_dir = book_dir / "wavs"
+    if not wavs_dir.exists() or not any(wavs_dir.glob("*.wav")):
+        rprint(
+            f"[red]Error:[/red] No WAV files found in [bold]{wavs_dir}[/bold]. "
+            "Run 'synthesize' first."
+        )
+        raise typer.Exit(code=1)
+
+    # Late import to defer torch loading for announcements
+    from src.assembly.assembler import run_assembly
+
+    rprint("\n[bold green]Phase 5: Assembly[/bold green]")
+    device = "cpu" if cpu else "auto"
+    stats = run_assembly(
+        book_dir,
+        epub_path=epub_path,
+        title_override=title,
+        author_override=author,
+        cover_override=cover,
+        device=device,
+    )
+
+    # Completion summary
+    audiobook_path = book_dir / "audiobook.mp3"
+    chapters_dir = book_dir / "chapters"
+
+    def _fmt_duration(seconds: float) -> str:
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        secs = int(seconds % 60)
+        if hours > 0:
+            return f"{hours}h {minutes:02d}m {secs:02d}s"
+        return f"{minutes}m {secs:02d}s"
+
+    def _fmt_size(path: Path) -> str:
+        if not path.exists():
+            return "N/A"
+        size = path.stat().st_size
+        if size >= 1_073_741_824:
+            return f"{size / 1_073_741_824:.1f} GB"
+        if size >= 1_048_576:
+            return f"{size / 1_048_576:.1f} MB"
+        return f"{size / 1024:.1f} KB"
+
+    # Calculate total chapter MP3 size
+    chapter_mp3_total = 0
+    if chapters_dir.exists():
+        for mp3 in chapters_dir.glob("*.mp3"):
+            chapter_mp3_total += mp3.stat().st_size
+
+    def _fmt_bytes(nbytes: int) -> str:
+        if nbytes >= 1_073_741_824:
+            return f"{nbytes / 1_073_741_824:.1f} GB"
+        if nbytes >= 1_048_576:
+            return f"{nbytes / 1_048_576:.1f} MB"
+        return f"{nbytes / 1024:.1f} KB"
+
+    duration_str = _fmt_duration(stats.total_duration_ms / 1000)
+
+    rprint(
+        f"\n[bold green]Assembly complete[/bold green]\n"
+        f"  Chapters     : [cyan]{stats.chapter_mp3s_created}[/cyan]\n"
+        f"  Duration     : [cyan]{duration_str}[/cyan]\n"
+        f"  Chapters dir : [cyan]{chapters_dir}[/cyan]"
+        f" ({_fmt_bytes(chapter_mp3_total)})\n"
+        f"  Audiobook    : [cyan]{audiobook_path}[/cyan]"
+        f" ({_fmt_size(audiobook_path)})"
+    )
+
+    return audiobook_path
+
+
 def run_full_pipeline(epub_path: Path, output_dir: Path) -> None:
     """Orchestrate all 5 pipeline phases.
 
@@ -498,4 +600,7 @@ def run_full_pipeline(epub_path: Path, output_dir: Path) -> None:
         "[yellow]Phase 4 (synthesize): requires voice_map.json from match phase. "
         "Run separately: python main.py synthesize <book-dir>[/yellow]"
     )
-    rprint("[yellow]Phase 5 (assemble): not yet implemented[/yellow]")
+    rprint(
+        "[yellow]Phase 5 (assemble): requires WAV files from synthesize phase. "
+        "Run separately: python main.py assemble <book-dir>[/yellow]"
+    )

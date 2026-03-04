@@ -6,6 +6,7 @@ import typer
 from rich import print as rprint
 
 from src.pipeline import (
+    run_assemble,
     run_attribute,
     run_full_pipeline,
     run_match,
@@ -202,10 +203,51 @@ def assemble(
         ...,
         help="Output directory for a specific book (e.g. output/the-name-of-the-wind/)",
     ),
+    epub: Path = typer.Option(
+        None,
+        "--epub",
+        help="Source EPUB for metadata extraction (title, author, cover)",
+    ),
+    title: str = typer.Option(
+        None,
+        "--title",
+        help="Override book title for ID3 tags",
+    ),
+    author: str = typer.Option(
+        None,
+        "--author",
+        help="Override author for ID3 tags",
+    ),
+    cover: Path = typer.Option(
+        None,
+        "--cover",
+        help="Override cover art image (JPEG/PNG)",
+    ),
+    cpu: bool = typer.Option(
+        False,
+        "--cpu",
+        help="Force CPU mode for chapter announcement generation",
+    ),
 ) -> None:
-    """Assemble segments into final audiobook MP3."""
-    rprint("[yellow]Not yet implemented — coming in Phase 5[/yellow]")
-    raise typer.Exit(code=0)
+    """Assemble WAV segments into chapter MP3s and combined audiobook."""
+    # Validate book_dir exists
+    if not book_dir.exists():
+        rprint(f"[red]Error:[/red] Directory not found: [bold]{book_dir}[/bold]")
+        raise typer.Exit(code=1)
+
+    # Validate epub if provided
+    if epub is not None and not epub.exists():
+        rprint(f"[red]Error:[/red] EPUB file not found: [bold]{epub}[/bold]")
+        raise typer.Exit(code=1)
+
+    # Validate cover if provided
+    if cover is not None and not cover.exists():
+        rprint(f"[red]Error:[/red] Cover image not found: [bold]{cover}[/bold]")
+        raise typer.Exit(code=1)
+
+    run_assemble(
+        book_dir, epub_path=epub, title=title, author=author, cover=cover, cpu=cpu
+    )
 
 
 if __name__ == "__main__":
