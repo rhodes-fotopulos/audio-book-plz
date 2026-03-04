@@ -9,12 +9,12 @@ Requirements for pipeline quality improvement milestone. Each maps to roadmap ph
 
 ### TTS Engine
 
-- [ ] **TTS-01**: Pipeline synthesizes audio using Qwen3-TTS 1.7B via mlx-audio instead of Chatterbox TTS
-- [ ] **TTS-02**: TTS engine manages MLX Metal cache to remain memory-stable across full-book synthesis runs
-- [ ] **TTS-03**: Pipeline pre-splits text into 500-600 char chunks at paragraph/sentence boundaries before TTS generation
-- [ ] **TTS-04**: Voice references use 10-15 second SNR-filtered clips from LibriTTS-R with bundled transcripts
-- [ ] **TTS-05**: Chatterbox preserved as fallback behind config flag during migration
-- [ ] **TTS-06**: Existing checkpoint files are versioned — old Chatterbox checkpoints are gracefully invalidated, not silently reused
+- [x] **TTS-01**: Pipeline synthesizes audio using Qwen3-TTS 1.7B via mlx-audio instead of Chatterbox TTS
+- [x] **TTS-02**: TTS engine manages MLX Metal cache to remain memory-stable across full-book synthesis runs
+- [x] **TTS-03**: Pipeline pre-splits text into 500-600 char chunks at paragraph/sentence boundaries before TTS generation
+- [x] **TTS-04**: Voice references use 10-15 second SNR-filtered clips from LibriTTS-R with bundled transcripts
+- [x] **TTS-05**: Chatterbox preserved as fallback behind config flag during migration
+- [x] **TTS-06**: Existing checkpoint files are versioned — old Chatterbox checkpoints are gracefully invalidated, not silently reused
 
 ### LLM Intelligence
 
@@ -78,12 +78,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| TTS-01 | Phase 7 | Pending |
-| TTS-02 | Phase 7 | Pending |
-| TTS-03 | Phase 7 | Pending |
-| TTS-04 | Phase 7 | Pending |
-| TTS-05 | Phase 7 | Pending |
-| TTS-06 | Phase 7 | Pending |
+| TTS-01 | Phase 7 | Complete |
+| TTS-02 | Phase 7 | Complete |
+| TTS-03 | Phase 7 | Complete |
+| TTS-04 | Phase 7 | Complete |
+| TTS-05 | Phase 7 | Complete |
+| TTS-06 | Phase 7 | Complete |
 | LLM-01 | Phase 8 | Pending |
 | LLM-02 | Phase 8 | Pending |
 | LLM-03 | Phase 8 | Pending |
