@@ -1,245 +1,199 @@
 # Project Research Summary
 
-**Project:** audio-book-plz
-**Domain:** Local EPUB-to-multi-voice audiobook pipeline (Python, Ollama + Chatterbox TTS, Apple Silicon)
-**Researched:** 2026-03-03
-**Confidence:** MEDIUM-HIGH
+**Project:** audio-book-plz v1.1
+**Domain:** EPUB-to-audiobook pipeline — multi-voice, local, Apple Silicon (v1.1 quality improvements)
+**Researched:** 2026-03-04
+**Confidence:** MEDIUM (stack additions are young; emotion + voice-cloning gap is a confirmed architectural blocker)
 
 ## Executive Summary
 
-This project is a sequential, phase-isolated batch pipeline that converts EPUB fiction into multi-voice audiobooks using fully local AI — no cloud services, no per-call costs, no internet dependency. Experts in this space build similar systems as five discrete phases: EPUB parsing, LLM-based speaker attribution, voice-character matching, TTS synthesis, and audio assembly. The defining constraint is a 16GB unified memory budget on an M4 Mac, which forces LLM and TTS models to be kept strictly separate in memory — they can never co-reside. This constraint shapes every architectural decision: sequential phases, explicit teardown between phases, and file-presence checkpointing so long overnight runs can safely resume after interruption.
+audio-book-plz v1.1 is a 9-feature quality upgrade to an existing, working EPUB-to-audiobook pipeline. The central change is replacing Chatterbox TTS (PyTorch/MPS, ~300 char limit, memory-leaky) with Qwen3-TTS 1.7B via mlx-audio (Apple Silicon native MLX framework, ~32K token context, text-semantic emotion inference). This engine swap is the critical path: six of the nine features depend on it, and two more benefit from it. The architecture expands from 5 sequential phases to 7, inserting a dedicated Emotion Analysis phase (Phase 3) and a Voice Consistency Verification phase (Phase 6). The existing disk-based inter-phase contract, sequential LLM-then-TTS memory boundary, and checkpoint/resume pattern all remain intact and unchanged.
 
-The recommended approach is a Python 3.11 pipeline using Ollama with Qwen3 8B for local LLM work (character extraction and speaker attribution), Chatterbox TTS for zero-shot voice cloning against LibriTTS-P reference audio, and pydub + ffmpeg for audio assembly. The combination of EPUB parsing, fully local LLM attribution, LibriTTS-P voice matching, and per-segment checkpointing is genuinely novel — no existing open-source tool does all of these together. The pipeline delivers real competitive differentiation: automated per-line dialogue attribution across a full novel, character voices cloned from 2,443 real human recordings matched by trait descriptions, and a resumable overnight synthesis run.
+The recommended build order is three clearly sequenced groups. First: the TTS engine swap (Features 1, 2, 3) as an atomic unit — this is the highest-risk change and must be validated before anything builds on it. Second: the LLM intelligence upgrades (Features 4, 6, 5) which share the existing Ollama lifecycle and improve upstream data quality. Third: the production finishing layer (Features 7, 8, 9) which are self-contained assembly enhancements and a final quality gate. Each group provides independent validation and rollback points.
 
-The key risks are concentrated in two areas. First, Chatterbox MPS support on Apple Silicon is community-verified but not officially documented, meaning the synthesis phase requires careful environment setup (PyTorch installed before Chatterbox, `PYTORCH_ENABLE_MPS_FALLBACK=1` set, MPS health-checked before long runs). Second, LLM attribution quality degrades silently when Ollama's default context window is too small — the model processes only the first portion of a long chapter and returns plausible-looking but partially hallucinated results. Both risks have clear mitigations that must be treated as first-class design requirements, not optional checks.
+The single biggest technical risk is the confirmed Qwen3-TTS emotion + voice-cloning gap: the Base model (which supports voice cloning from reference audio) does NOT support the `instruct` emotion parameter. As of March 2026, explicit emotion control only works with the CustomVoice model's 9 preset speakers — not with cloned voices from reference audio. This is confirmed via official GitHub discussions #231 and #238. The planned three-layer emotion system must be redesigned to work through text-semantic inference (automatic, free with Qwen3-TTS) and speech-act tag post-processing rather than TTS emotion instructions. This is a capability reduction from the original conception but remains a meaningful improvement over v1.0's zero emotion awareness.
 
 ## Key Findings
 
 ### Recommended Stack
 
-The stack is well-defined by the project's constraints. Python 3.11 is required (Chatterbox pins sub-dependencies that break on 3.12+). The LLM layer is Ollama serving Qwen3 8B at Q4_K_M quantization, accessed via the official `ollama` Python client with Pydantic-structured JSON output — no LangChain or LlamaIndex needed. The TTS layer is Chatterbox TTS 0.1.6 with PyTorch 2.6.0, where torch must be installed first to prevent pip pulling a CUDA-only wheel. Audio assembly uses pydub 0.25.1 and ffmpeg (Homebrew). Voice matching uses sentence-transformers with the `all-MiniLM-L6-v2` model as a fast, 22MB CPU-resident fallback for large character casts.
+The stack change is surgical: remove `chatterbox-tts` and its PyTorch/MPS overhead, add `mlx`, `mlx-audio[tts]`, `pedalboard`, and `resemblyzer`. All v1.0 dependencies (Python 3.11, pydub, pyloudnorm, mutagen, sentence-transformers, Ollama client, typer, rich, pydantic, ebooklib, beautifulsoup4, lxml) stay unchanged. The Ollama model upgrades from `qwen3:8b` Q4_K_M to `qwen3:14b` Q4_K_M — a config constant change, not a code change. PyTorch remains as a transitive dependency of `sentence-transformers` and `resemblyzer` but is no longer explicitly imported or managed for TTS inference.
 
-See `.planning/research/STACK.md` for full version matrix, installation order, and Chatterbox MPS caveats.
+Memory budget on 16GB M4 is workable throughout. LLM phases (1-4, Ollama qwen3:14b Q4_K_M) use ~10GB — tight but fits with `OLLAMA_KV_CACHE_TYPE=q8_0`. TTS synthesis (Qwen3-TTS 1.7B 8-bit via MLX) uses ~3-4GB — notably lighter than Chatterbox's ~5-6GB. The strict sequential boundary (unload Ollama before loading TTS) remains the architecture's fundamental memory constraint and is unchanged from v1.0.
 
 **Core technologies:**
-- **Python 3.11**: Runtime — required by Chatterbox's pinned sub-dependencies; 3.12+ breaks C-extensions
-- **Ollama + Qwen3 8B (Q4_K_M)**: Local LLM — zero-config server, structured JSON output via Pydantic, ~4.5-6GB VRAM
-- **Chatterbox TTS 0.1.6**: Voice synthesis — best open-source zero-shot voice cloning; MPS-accelerated on Apple Silicon with community workarounds
-- **PyTorch 2.6.0**: Tensor backend — must install before Chatterbox; MPS available on macOS 12.3+ Apple Silicon
-- **ebooklib + BeautifulSoup4 + lxml**: EPUB parsing — de-facto standard stack for EPUB2/EPUB3 extraction
-- **pydub + ffmpeg**: Audio assembly — concatenation and MP3 encoding; ffmpeg via Homebrew for libmp3lame
-- **sentence-transformers (all-MiniLM-L6-v2)**: Voice matching fallback — 22MB, CPU-resident, cosine similarity for large casts
-- **pysbd**: Text chunking — rule-based sentence boundary detection, handles fiction punctuation edge cases
-- **typer + rich**: CLI and progress — phase-level subcommands, progress bars for multi-hour synthesis runs
+- `mlx>=0.31.0` + `mlx-audio[tts]>=0.3.1`: TTS inference — Apple Silicon native, no PyTorch for inference, replaces Chatterbox. Primary model: `mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit`.
+- `pedalboard>=0.9.22`: Audio post-processing — Spotify's C++-backed professional effects chain (Compressor, HighpassFilter, Limiter, NoiseGate). GPLv3, acceptable for personal-use local tool.
+- `resemblyzer>=0.1.3`: Voice consistency verification — 256-dim GE2E speaker embeddings, CPU-only, ~17MB model. Sufficient accuracy for same-model drift detection.
+- Ollama `qwen3:14b-q4_K_M`: LLM upgrade — significantly better nuanced reasoning than 8B at same memory envelope with KV cache quantization.
+- LibriTTS-R (data, not pip): Higher-quality reference clips with bundled `.normalized.txt` transcripts. Target 10-15 second clips (quality plateaus beyond 15s, generation hangs above ~30s).
 
 ### Expected Features
 
-The pipeline delivers capabilities no existing open-source tool provides as a complete package. All listed tools (epub2tts, ebook2audiobook, epub_to_audiobook, Alexandria, audiobook-creator) do subsets; none combines local EPUB parsing + local LLM attribution + LibriTTS-P voice cloning + CLI + checkpoint/resume.
+**Must have (table stakes — any audiobook pipeline needs these):**
+- Consistent volume/loudness across segments (already in v1.0 via pyloudnorm LUFS -19.0)
+- No audio clicks/pops at segment boundaries (5-10ms fade-in/fade-out — not yet implemented)
+- Correct speaker attribution (improved via LLM upgrade to 14B)
+- Distinct voices per character (improved via longer, SNR-filtered reference clips with transcripts)
+- Natural pause timing (randomized within context-aware ranges, not fixed values)
+- Accurate dialogue/narration detection (LLM-based with speech-act subtype tagging)
+- Clean audio output (professional mastering chain via pedalboard)
 
-See `.planning/research/FEATURES.md` for competitor analysis table and full MVP definition.
+**Should have (differentiators that close the gap to professional quality):**
+- Text-inherent emotional prosody (Qwen3-TTS reads text semantics automatically — free with Feature 1)
+- Longer, smoother TTS segments (500-600 chars vs 280 — reduces segment count ~40-50%)
+- Voice consistency verification and regeneration (embedding-based drift detection)
+- LLM-based dialogue detection with speech-act tagging (spoken/thought/shouted/whispered)
+- Professional ACX-grade mastering chain (EQ + compression + limiting via pedalboard)
+- Context-aware randomized pause timing
 
-**Must have (table stakes):**
-- EPUB parsing with chapter extraction and front matter filtering — the entry point; every comparable tool requires this
-- Speech-ready text segmentation — raw EPUB HTML cannot reach LLM or TTS; cleaning is mandatory
-- Single narrator TTS synthesis — baseline capability required before multi-voice adds value
-- Chapter-level audio output — listener expectation; one file per chapter minimum
-- Full-book assembled audio — consolidated MP3 output expected by any audiobook tool
-- Checkpoint/resume for long runs — a novel takes 3-11 hours; crash recovery is non-negotiable
-- CLI phase-level invocation — batch operation requires headless, phase-addressable commands
-- Basic progress reporting — silent tools feel broken during multi-hour synthesis runs
-- Audio metadata (ID3 tags) — required for Audiobookshelf/Plex library organisation
-
-**Should have (competitive differentiators):**
-- LLM-based character extraction — no existing EPUB tool does this automatically from fiction text
-- LLM-based per-line dialogue attribution — the core feature; local, on EPUB, at book scale
-- Voice cloning from LibriTTS-P reference audio — 2,443 real human recordings, not synthetic presets
-- LLM + embedding-based voice-character trait matching — novelty; no existing tool does this
-- Narrator vs. dialogue tagging — stable narrator voice across entire book, distinct character voices
-- Per-segment WAV intermediates with speaker identity — enables targeted re-synthesis and debugging
-- Sequential LLM/TTS memory phase isolation — hardware constraint made explicit as architecture
-
-**Defer (v2+):**
-- M4B output with embedded chapter markers — functional MP3 output is sufficient for v1
-- Emotion/prosody annotation per character — risk of quality degradation without extensive listening tests
-- Larger LLM swap (post-validation) — defer until v1 attribution errors are understood
-- Batch library processing — single-book pipeline must be stable first
-- GUI/web interface — anti-feature for this personal-use CLI tool
+**Defer (v2+ or later iteration):**
+- Explicit per-line emotion instructions with cloned voices — Base model ignores `instruct`; requires fine-tuning or upstream capability improvement
+- Real-time emotion slider controls — impractical at 3000+ segments per book
+- Multiple TTS engines per character type — memory and voice consistency constraints prohibit
+- De-essing as default post-processing — ACX warns against it for synthetic speech
+- Ultra-long reference clips (30+ seconds) — quality degrades, generation hangs
+- Per-sentence inline emotion tag markup — Qwen3-TTS does not support this
 
 ### Architecture Approach
 
-The architecture is a five-phase sequential pipeline with file-presence checkpointing between phases. Each phase writes a typed JSON artifact to disk; the pipeline orchestrator checks artifact presence before running a phase, enabling trivial resume. Phase 4 (TTS synthesis) adds per-segment WAV checkpointing within the phase because it is the longest-running step (3-11 hours). Memory isolation is enforced at the Phase 2/3 → Phase 4 boundary: Ollama is explicitly stopped and Python memory is freed before Chatterbox loads. Pydantic models define the contract between every phase — raw dict passing is explicitly rejected. See `.planning/research/ARCHITECTURE.md` for data flow diagrams and anti-patterns.
+The existing 5-phase disk-based sequential pipeline expands to 7 phases by inserting Emotion Analysis (Phase 3, between Attribution and Voice Matching) and Voice Consistency Verification (Phase 6, between Synthesis and Assembly). A single Ollama model load now spans all four LLM-dependent phases (Parse, Attribute, Emotion, Match) before one explicit unload at the Phase 4-to-5 boundary — eliminating the per-phase load/unload cycles of v1.0. All inter-phase communication remains JSON on disk. Per-segment WAV intermediates in `wavs/ch{NN}/` are unchanged. Late imports for heavy dependencies (MLX, SpeechBrain) remain the established pattern.
 
 **Major components:**
-1. **CLI Layer (typer)** — parses subcommands (`parse`, `attribute`, `match`, `synthesize`, `assemble`, `run`), routes to pipeline orchestrator
-2. **Pipeline Orchestrator** — sequences phases, checks artifact presence for resume, enforces memory budget at phase boundaries
-3. **Phase 1: EPUB Parser** — ebooklib + BeautifulSoup4 → `segments.json` (spine-ordered, HTML-cleaned, type-tagged segments)
-4. **Phase 2: LLM Attributor** — Ollama/Qwen3 8B with Pydantic structured output → `attributed.json` + `characters.json` (per-line speaker labels, character profiles)
-5. **Phase 3: Voice Matcher** — LLM trait comparison + sentence-transformers fallback → `voice_map.json` (character-to-LibriTTS-P speaker mapping)
-6. **Phase 4: TTS Synthesizer** — Chatterbox on MPS, 280-char chunking, per-segment WAV checkpointing → `wavs/` directory
-7. **Phase 5: Audio Assembler** — pydub chapter-by-chapter concatenation + ffmpeg MP3 encoding → `chapters/*.mp3` + `audiobook.mp3`
-8. **Pydantic Models** — shared schemas (Segment, AttributedSegment, VoiceMap) enforce inter-phase contracts and catch schema drift at boundaries
+1. `src/parser/` (modify) — EPUB parsing + new LLM-based dialogue subtype detection
+2. `src/attribution/extractor.py` (extend) — character extraction with emotion baseline fields
+3. `src/emotion/` (NEW module) — scene mood analysis + line-level emotion overrides producing `emotions.json`
+4. `src/matching/clip_selector.py` (rewrite) — 10-15s SNR-filtered reference clips with transcripts
+5. `src/synthesis/tts_engine.py` (rewrite) — Qwen3-TTS via mlx-audio, replacing Chatterbox entirely
+6. `src/verify/` (NEW module) — speaker embedding comparison and conditional regeneration
+7. `src/assembly/postprocessor.py` (NEW file) — pedalboard effects chain (trim, gate, compress, EQ)
+8. `src/assembly/concatenator.py` (modify) — Gaussian-randomized pause timing, crossfades
+9. `src/pipeline.py` (modify) — orchestrate 7 phases, single Ollama load lifecycle
 
 ### Critical Pitfalls
 
-1. **Chatterbox 40-second audio cutoff** — enforce ≤280 character chunks at sentence boundaries; validate chunk sizes before any synthesis call; this is a hard architectural limit, not advisory
-2. **Chatterbox MPS instability on Apple Silicon** — install PyTorch before Chatterbox; set `PYTORCH_ENABLE_MPS_FALLBACK=1`; run a 10-segment health check before any long run; keep CPU fallback codepath
-3. **Ollama context window silently truncating chapters** — explicitly set `num_ctx=32768` per attribution request; chunk chapters to 2,000-3,000 words maximum before LLM calls; log token estimates per request
-4. **LLM attribution hallucination and cascade misattribution** — include full character registry in every attribution prompt; flag "Unknown" attributions explicitly; validate all attribution results against the character registry; post-attribution sanity check for unregistered character names
-5. **Simultaneous model memory pressure (OOM crash)** — explicitly call `ollama stop` + verify with `ollama ps` before loading Chatterbox; add `gc.collect()` + `torch.mps.empty_cache()` at every phase boundary
+1. **MLX Metal cache accumulation kills overnight synthesis runs** — `mx.metal.clear_cache()` must replace `torch.mps.empty_cache()` in `TTSEngine.cleanup_memory()` on day one of the TTS swap. Call every 10 segments. Set `mx.metal.set_cache_limit(4GB)`. Failure mode is progressive slowdown to swap thrashing over a full-book run.
 
-**Moderate pitfalls to address per phase:**
-- EPUB structure chaos: use spine order only; word-count filter (skip < 100 words); structure preview before any LLM work
-- Quotation mark edge cases: normalise all quote variants to ASCII; handle multi-paragraph dialogue continuation
-- Checkpoint corruption: atomic WAV write (`.tmp` rename); validate all "complete" segments on resume
-- Disk space exhaustion: estimate storage upfront; chapter-level WAV cleanup after assembly
-- Voice reference quality mismatch: make voice-character assignments human-reviewable with preview before synthesis
+2. **Emotion + voice cloning are mutually exclusive in Qwen3-TTS** — Confirmed (GitHub #231, #238): Base model (voice cloning from reference audio) ignores the `instruct` emotion parameter. CustomVoice model supports emotion but uses 9 preset speakers only — no custom voice cloning. Do NOT design the emotion system to pass emotion prompts to cloned voices; they will be silently ignored.
+
+3. **Breaking the working pipeline during the TTS engine swap** — Implement Qwen3-TTS as a new class alongside Chatterbox, gated by a config flag. Keep Chatterbox working until Qwen3-TTS passes A/B quality comparison on 10+ segments. Old checkpoints must be gracefully invalidated (add engine version field), not silently reused.
+
+4. **Ollama 14B causes swap thrashing if not fully unloaded before TTS** — 14B Q4_K_M uses ~10GB. Verify `ensure_ollama_unloaded()` actually frees memory (add sleep + memory check), not just sends the unload signal. Fallback is 8B Q8_0 (~8GB) if 14B proves unstable.
+
+5. **Voice consistency pass creates infinite regeneration loops** — TTS variance naturally produces cosine similarity of 0.70-0.90 for the same speaker. A threshold above 0.80 will flag 20-30% of legitimate segments. Start at 0.60, cap regeneration at 3 attempts per segment, accept best result. If >15% of a character's segments are flagged, the problem is the reference clip, not the segments.
+
+6. **Post-processing that degrades audio quality** — TTS audio already lacks human imperfections; removing more makes it sound robotic. Compression fights the emotion system's dynamic range. Apply the Hippocratic principle: each processing step requires A/B validation before commitment. Start with LUFS normalization only (v1.0 already has this), add one step at a time.
 
 ## Implications for Roadmap
 
-Based on research, the natural phase structure follows the feature dependency graph from FEATURES.md and the memory isolation requirements from ARCHITECTURE.md. The pipeline is linear and each phase's output is the next phase's input — this maps cleanly to development phases that can each be validated independently.
+The 9 features naturally cluster into three phases with clear dependency ordering. Feature research, architecture, and pitfalls all converge on the same groupings independently.
 
-### Phase 1: Foundation and EPUB Parsing
+### Phase A: TTS Engine Swap (Features 1, 2, 3)
 
-**Rationale:** EPUB parsing is the mandatory entry point for everything downstream. It is also where EPUB structure chaos (Pitfall 6) and quotation mark edge cases (Pitfall 7) must be solved permanently. Getting clean, typed, speech-ready segments out of arbitrary EPUB files is the hardest parsing challenge — solve it first, validate it on multiple EPUBs, and everything downstream becomes deterministic.
+**Rationale:** Feature 1 (Qwen3-TTS swap) is the critical path. Features 2 (larger chunks) and 3 (longer references with transcripts) ship with it because they are trivial changes once the engine is in place AND Feature 3 is a prerequisite for Feature 1 to achieve quality parity (the `ref_text` parameter meaningfully boosts speaker similarity). This phase carries the highest technical risk — new library, new API surface, new failure modes — and must be validated before any subsequent phase builds on it.
 
-**Delivers:** Working CLI skeleton (`typer`), EPUB parsing pipeline producing `segments.json`, HTML cleaning and text normalisation, sentence boundary segmentation (`pysbd`) with ≤280 char enforcement, narration/dialogue type tagging, front matter filtering, structure preview command, per-book output directory with book slug namespacing.
+**Delivers:** Working Qwen3-TTS synthesis producing 500-char segments with 10-15s reference clips and reference transcripts. Memory-stable for full-book runs. MLX Metal cache managed. Chatterbox preserved as fallback behind config flag. Sample rate compatibility verified. Checkpoint versioned.
 
-**Addresses:** EPUB parsing, speech-ready text output, narration/dialogue tagging, CLI phase-level invocation (partial), basic progress reporting (partial).
+**Addresses:** Text-inherent emotional prosody (free with Qwen3-TTS), larger chunks (CHAR_LIMIT constant change in `segmenter.py`), longer references (clip_selector rewrite with SNR filtering and transcript support).
 
-**Avoids:** EPUB structure chaos (Pitfall 6), quotation mark edge cases (Pitfall 7), Chatterbox chunk size cutoff (Pitfall 1 — prevention happens here).
+**Avoids:** MLX cache accumulation (Pitfall 1), broken pipeline (Pitfall 3), reference audio too long (Pitfall 2), sample rate mismatch (Pitfall 9), mlx-audio split_pattern bug (Pitfall 8 — pre-split text before engine), accent regression (Pitfall 12 — pin library version).
 
-**Research flag:** Standard patterns; no deeper research needed for this phase.
+**Research flag:** NEEDS PHASE RESEARCH — mlx-audio is young (v0.3.1, Jan 2026) with active documented bugs (Issue #464 audio dropout, Issue #439 accent loss). Concrete API patterns, memory cleanup integration, and WAV output format must be validated before building. Spike required.
 
----
+### Phase B: LLM Intelligence Upgrades (Features 4, 6, 5)
 
-### Phase 2: LLM Character Extraction and Speaker Attribution
+**Rationale:** Features 4 (LLM upgrade) and 6 (dialogue detection) are independent of the TTS swap and improve data quality flowing into synthesis. Feature 5 (emotion system) depends on both Feature 1 (for Qwen3-TTS semantic inference) and Feature 6 (for speech-act tags to drive post-processing). All three share the Ollama model load lifecycle and add zero memory cost to the pipeline. LLM upgrade (Feature 4) first since it benefits both dialogue detection and attribution quality immediately.
 
-**Rationale:** Attribution depends on parsing output (Phase 1). Character extraction must precede attribution — you cannot attribute to characters you have not identified. This phase contains the highest intellectual complexity (LLM prompting, structured output, character registry with alias resolution) and the most subtle failure modes (context truncation, hallucination, cascade misattribution). It should be validated independently before any TTS work begins, because attribution errors discovered late require re-synthesis of entire character voice tracks.
+**Delivers:** `qwen3:14b` Q4_K_M attribution with KV cache quantization, hybrid regex + LLM dialogue subtype tagging (spoken/thought/shouted/whispered) with caching, `emotions.json` artifact with scene moods and line overrides, new `src/emotion/` module with resolver that maps speech-act tags to post-processing parameters (not to TTS `instruct` calls).
 
-**Delivers:** Character extraction producing `characters.json` (with full alias lists), per-chapter dialogue attribution producing `attributed.json`, Ollama integration with Pydantic structured output, explicit `num_ctx=32768` configuration, character registry with alias resolution, chapter-level chunking for LLM context management, "Unknown" attribution flagging and logging, post-attribution sanity check against registry.
+**Addresses:** LLM model upgrade (config constant change in `llm_client.py`), hybrid regex + LLM dialogue detection (LLM refines only ambiguous cases; full chapters batched per call), three-layer emotion system redesigned to use text-semantic inference + speech-act post-processing.
 
-**Uses:** Ollama 0.6.1, Qwen3 8B Q4_K_M, Pydantic 2.12.5, ollama Python client with `format=` JSON schema.
+**Avoids:** Emotional whiplash (Pitfall 5) via scene-level emotion first, Gaussian-smoothed intensity, narration segments kept emotionally neutral. LLM over-engineering (Pitfall 10) via hybrid approach. 14B model OOM (Pitfall 4) via memory monitoring and `num_ctx` reduction. Emotion system breaking synthesis (Pitfall — emotion instructions NOT passed to cloned voice Base model).
 
-**Implements:** Phase 2 (LLM Attributor) + character registry in `characters.json`.
+**Research flag:** NEEDS PHASE RESEARCH — the redesigned emotion system (text-semantic + speech-act post-processing instead of `instruct` parameter) is architecturally sound but empirically unvalidated. A spike is required to determine whether speech-act tag post-processing (volume adjustments for whispered/shouted) produces perceptibly better output before committing to the full implementation.
 
-**Avoids:** Ollama context truncation (Pitfall 3), LLM hallucination/cascade misattribution (Pitfall 4), one-LLM-call-per-segment anti-pattern (send full chapter per call).
+### Phase C: Production Quality Finishing (Features 7, 8, 9)
 
-**Research flag:** May benefit from research during planning — Qwen3 8B structured output reliability and optimal prompt structure for fiction attribution are not fully characterised. Recommend testing on a sample chapter before building the full phase.
+**Rationale:** Features 7 (randomized pauses), 8 (post-processing), and 9 (voice consistency) all operate on TTS output, not on the TTS engine itself. They are independent of each other and of the LLM phases. Feature 9 (voice consistency) must be last because its cosine similarity threshold calibration depends on the quality of all upstream features being stable — tuning it on preliminary output would require re-tuning after Phase A and B are finalized.
 
----
+**Delivers:** Gaussian-randomized context-aware pauses (seeded per book for reproducibility), pedalboard post-processing chain applied incrementally with A/B validation at each step, voice consistency verification with per-character similarity reporting, 3-attempt capped regeneration accepting best result, 44.1kHz 192kbps ACX-grade MP3 export.
 
-### Phase 3: Voice-Character Matching
+**Addresses:** Natural pause timing (Gaussian not uniform, contextually aware, seeded), professional mastering chain (incremental, Hippocratic principle), voice drift detection and regeneration.
 
-**Rationale:** Matching depends on character profiles from Phase 2. Voice assignments must be confirmed by a human before synthesis begins — wrong assignments discovered after a 10-hour synthesis run are very expensive to fix. This phase is architecturally simple (reads CSVs, runs embeddings, writes JSON) but requires a human review step that should be designed in from the start, not retrofitted.
+**Avoids:** Artificial-sounding pauses (Pitfall 11 — Gaussian distribution not uniform, context-aware base durations). Post-processing degradation (Pitfall 7 — A/B gating at each step, start with LUFS only). Infinite regeneration loops (Pitfall 6 — 3-attempt cap, 0.60 initial threshold). Processing all segments through consistency check (performance trap — confidence-flagged-only strategy).
 
-**Delivers:** LibriTTS-P metadata indexing (pre-filtered CSV), LLM-based trait matching for primary characters, sentence-transformers cosine similarity fallback for large casts, `voice_map.json` with `confirmed` flag per assignment, voice preview tool (10-second test clip per candidate), 3 candidate references per character before locking.
-
-**Uses:** sentence-transformers 5.2.3 (all-MiniLM-L6-v2), Ollama for semantic matching, LibriTTS-P train-clean-360 subset.
-
-**Implements:** Phase 3 (Voice Matcher) component.
-
-**Avoids:** Voice reference quality mismatch (Pitfall 8) — interactive review step; simultaneous model memory pressure (Pitfall 5) — sentence-transformers runs on CPU, Ollama used for matching only.
-
-**Research flag:** LibriTTS-P dataset structure and download scope (full dataset is 100GB+; only train-clean-360 subset needed) should be confirmed during planning. Pre-filtering strategy for the voice index needs validation.
-
----
-
-### Phase 4: TTS Synthesis
-
-**Rationale:** Synthesis is the longest phase (3-11 hours per novel) and the highest-stakes in terms of failure recovery. It depends on all three prior phases. The critical constraints — MPS health check, sequential memory isolation (Ollama unloaded before Chatterbox loads), per-segment WAV checkpointing, atomic write, RMS silence detection — are all non-negotiable and must be designed in from the start, not added when problems surface.
-
-**Delivers:** Chatterbox TTS integration with MPS acceleration, per-segment WAV synthesis with 280-char chunks, per-segment WAV checkpointing (file-presence resume), atomic `.tmp`-rename write pattern, MPS health check before long runs, `PYTORCH_ENABLE_MPS_FALLBACK=1` environment setup, RMS silence check per segment with auto-regeneration, Ollama teardown verification before model load, storage estimation at startup, chapter-level WAV cleanup after assembly, sample rate normalisation to 24kHz, progress reporting (rich + tqdm).
-
-**Uses:** Chatterbox TTS 0.1.6, PyTorch 2.6.0 (MPS), torchaudio, soundfile, rich, tqdm.
-
-**Implements:** Phase 4 (TTS Synthesizer) component, memory.py utilities, text_chunker.py validation.
-
-**Avoids:** Chatterbox 40-second cutoff (Pitfall 1), MPS instability (Pitfall 2), memory pressure OOM (Pitfall 5), checkpoint corruption (Pitfall 9), disk exhaustion (Pitfall 10), silent WAV generation (Pitfall 13), FFT MPS fallback performance trap (Pitfall 14).
-
-**Research flag:** High — Chatterbox MPS behavior on Apple Silicon is community-verified but not officially documented. Recommend a focused MPS validation sprint at the start of this phase before writing production synthesis logic.
-
----
-
-### Phase 5: Audio Assembly and Polish
-
-**Rationale:** Assembly is the simplest phase technically but is where the output quality becomes tangible. Audio metadata (ID3 tags) and chapter-level concatenation strategy (chapter-by-chapter to avoid OOM) are both mandatory for a usable result. This phase also includes the v1.x polish features (human-editable attribution JSON, dry-run preview, per-character voice preview) that are cheap to add once the baseline pipeline works.
-
-**Delivers:** Chapter-by-chapter WAV concatenation (avoiding full-book memory load), ffmpeg MP3 encoding at 128kbps, full-book `audiobook.mp3` assembly via ffmpeg concat (not in-memory), ID3 metadata embedding (title, author, chapter number, chapter name), chapter MP3 output with correct sequence naming, human-editable `attributed.json` with clear schema, dry-run/preview mode (segment count, synthesis time estimate, disk usage), per-character voice sample preview (3-second clips before full synthesis).
-
-**Uses:** pydub 0.25.1, ffmpeg (Homebrew), mutagen or eyeD3 for ID3 tagging.
-
-**Implements:** Phase 5 (Audio Assembler) component, full pipeline `run` command.
-
-**Avoids:** In-memory full-book concatenation OOM (anti-pattern from ARCHITECTURE.md — concatenate chapter-by-chapter, use ffmpeg for final join), sample rate mismatch (Pitfall 11 — normalised in Phase 4).
-
-**Research flag:** Standard patterns; ID3 tagging with mutagen is well-documented. No deeper research needed.
-
----
+**Research flag:** STANDARD PATTERNS — pedalboard, pydub, and resemblyzer are well-documented and mature. Pause timing is straightforward. Voice consistency threshold tuning requires empirical data from Phase A output, but the implementation pattern is unambiguous.
 
 ### Phase Ordering Rationale
 
-- **Dependency chain is strict**: each phase produces the artifact the next consumes; no reordering is possible
-- **Validate before synthesising**: attribution errors are far cheaper to fix before a 10-hour synthesis run; Phases 1-3 are fast (minutes to hours), Phase 4 is slow (overnight)
-- **Human review at Phase 3**: voice-character assignments require a review step before synthesis; building this into Phase 3 prevents the most expensive failure mode (wrong voice for a major character across thousands of segments)
-- **Memory isolation is architecture**: the Phase 2/3 → Phase 4 boundary is where LLM teardown is enforced; both phases must be complete before the TTS model loads
-- **Assembly last, polish bundled**: Phase 5 is the natural home for v1.x polish features; they all depend on a working synthesis pipeline and are cheap once the pipeline is validated
+- Phase A before B and C: six features depend on Qwen3-TTS being stable and validated. Emotion data, dialogue subtypes, and consistency verification are all meaningless until the TTS engine is producing reliable output.
+- Feature 4 (LLM upgrade) is technically independent and could ship first as a quick win. It is placed in Phase B to avoid splitting a simple config change into its own phase — the roadmap is cleaner at three phases, and the attribution quality improvement is amplified when combined with Feature 6.
+- Feature 3 (reference clips) is classified as Phase A despite being independently implementable — it lands with Feature 1 because `ref_text` in `voice_map.json` is a prerequisite for Qwen3-TTS voice cloning quality and the two changes must be validated together.
+- Features 7 and 8 are placed in Phase C (not earlier) to avoid testing complexity during the riskier Phases A and B.
+- Feature 9 is last by design: it is a quality gate on the output of all other features and its threshold cannot be calibrated until upstream quality is stable.
 
 ### Research Flags
 
-Phases needing deeper research during planning:
-- **Phase 2 (LLM Attribution):** Qwen3 8B structured output reliability for fiction dialogue attribution, optimal prompt engineering for speaker identification across large casts, and alias resolution prompt design are not fully characterised. Test on a sample chapter before building the full phase.
-- **Phase 4 (TTS Synthesis):** Chatterbox MPS stability on Apple Silicon requires a focused validation sprint. Community sources confirm it works with workarounds, but the failure modes are specific and must be characterised before production synthesis logic is written.
-- **Phase 3 (Voice Matching):** LibriTTS-P dataset download scope and pre-filtering strategy for the voice index need validation. Full dataset is 100GB+; only a subset is needed, and the right subset depends on the voice demographics required.
+Phases needing deeper research before planning:
+- **Phase A (TTS Engine Swap):** mlx-audio v0.3.1 has active bugs, young codebase (Jan 2026), no published M4 benchmarks. Spike API usage, memory cleanup pattern, WAV output format, and voice cloning quality before writing the full phase plan.
+- **Phase B (Emotion System):** The confirmed voice-cloning + instruct incompatibility forces a redesigned emotion architecture. The redesigned approach (text-semantic + speech-act post-processing) is unvalidated. Spike what speech-act post-processing actually sounds like before committing to full implementation.
 
 Phases with standard patterns (skip research-phase):
-- **Phase 1 (EPUB Parsing):** ebooklib + BeautifulSoup4 + pysbd is well-documented; patterns are established in comparable tools.
-- **Phase 5 (Audio Assembly):** pydub + ffmpeg + mutagen are all mature, well-documented libraries with established patterns for audiobook output.
+- **Phase C (Finishing):** pedalboard, pydub, resemblyzer, and Gaussian randomization are all well-documented with clear patterns. Threshold tuning for voice consistency requires empirical data but not architectural research.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | MEDIUM-HIGH | Core libraries verified via PyPI with exact versions. Chatterbox MPS support is MEDIUM — community-verified via GitHub issues, not official docs. PyTorch/Chatterbox install ordering is verified. |
-| Features | MEDIUM-HIGH | Competitor analysis is HIGH confidence (direct GitHub repo inspection). Multi-voice LLM attribution as a feature is MEDIUM — emerging space, few mature reference implementations. |
-| Architecture | HIGH | Architecture derives directly from confirmed project constraints (16GB memory budget, sequential phases, file-presence checkpointing). Patterns are verified against comparable pipeline implementations. |
-| Pitfalls | MEDIUM | Core pitfalls (Chatterbox cutoff, Ollama context, MPS instability, memory pressure) verified via GitHub issues and official docs. Some pitfalls (silent WAV generation, cascade misattribution at scale) are inferred from analogous pipeline experience where direct sources were sparse. |
+| Stack | MEDIUM | MLX and pedalboard are HIGH (verified via PyPI and official docs). mlx-audio is MEDIUM (young library, v0.3.1, active bugs). Resemblyzer is MEDIUM (functionally stable, inactive maintenance). Ollama 14B memory is HIGH via community benchmarks. Version conflict risk (mlx-audio pins `transformers<5.0.0`) is MEDIUM. |
+| Features | MEDIUM | Table stakes features are HIGH confidence. The emotion system is LOW confidence due to confirmed voice-cloning + `instruct` incompatibility. Feature priority and dependency graph are HIGH confidence. Anti-features (what NOT to build) are HIGH confidence. |
+| Architecture | MEDIUM-HIGH | 5-to-7 phase expansion is architecturally sound and consistent across all research files. Component boundaries are clear. The Base vs CustomVoice model question for emotion is the one unresolved architectural decision and must be resolved via spike before Phase B planning. |
+| Pitfalls | HIGH | MLX memory pitfalls are verified via official GitHub issues and MLX documentation. Emotion whiplash is backed by the Dopamine Audiobook paper. Voice consistency thresholds are backed by speaker verification research. Post-processing warnings align with broadcast audio engineering best practice. |
 
-**Overall confidence:** MEDIUM-HIGH
+**Overall confidence:** MEDIUM
 
 ### Gaps to Address
 
-- **Chatterbox MPS production reliability:** Community sources confirm it works, but the specific failure conditions (SDPA sequence length, FFT ops that fall back to CPU, memory pressure thresholds) are not fully documented. Address with a MPS validation sprint at the start of Phase 4 planning.
-- **Ollama structured output with Qwen3 8B for fiction attribution:** The structured output format parameter works in principle, but prompt engineering for complex fiction dialogue (multi-speaker scenes, interior monologue, ambiguous attribution) is not characterised. Address with a prompt validation step at the start of Phase 2 planning.
-- **LibriTTS-P subset scope:** The full dataset is 100GB+. The right download strategy (train-clean-360 only? filtered by quality?) and pre-indexing approach need validation before Phase 3 planning. Address during Phase 3 research-phase.
-- **Chatterbox Turbo model exclusion:** Research confirms the Turbo variant has a known Float64 MPS error. The standard 500M model must be used. This must be explicitly documented in environment setup to prevent future confusion.
-- **pydub maintenance status:** pydub 0.25.1 has not had a PyPI release since 2021. It is functionally complete for this use case, but if bugs surface in concatenation or MP3 export, `pydub-ng` (unofficial fork) or direct ffmpeg subprocess calls are the fallback. Monitor for issues during Phase 5.
+- **Voice cloning + emotion architectural decision (BLOCKER for Phase B planning):** The Qwen3-TTS Base model (voice cloning) ignores `instruct`. The redesigned emotion system uses text-semantic inference and speech-act post-processing. This must be empirically validated in a spike. If text-semantic inference is insufficient and speech-act post-processing produces no perceptible improvement, the emotion system may need to be deferred to v2 entirely.
+- **M4 Mac throughput benchmarks (needed for Phase A planning):** Published throughput is ~1000 chars/min on M2. M4 should be faster but no published benchmarks exist as of March 2026. This affects total synthesis runtime estimates for full-book runs. Measure during Phase A validation.
+- **Cosine similarity threshold for voice consistency (needed for Phase C planning):** The 0.60 baseline from speaker verification research applies to human speech. TTS-generated audio may have different embedding characteristics. Empirical tuning against Phase A output is required. Cannot determine threshold before TTS engine is stable.
+- **Ollama 14B stability on 16GB during full attribution runs (validate in Phase B):** Memory fits on paper (~10GB with KV cache quant) but real-world stability on a full novel-length attribution pass is unverified. Prepare 8B Q8_0 as fallback before starting Phase B.
+- **mlx-audio transformers version pin conflict (watch during Phase A):** mlx-audio pins `transformers<5.0.0`. sentence-transformers 3.x currently works with transformers 4.x. Future upgrades could break pip resolution. Pin `sentence-transformers<4.0` defensively in `pyproject.toml`.
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- PyPI package pages (EbookLib, chatterbox-tts, ollama, beautifulsoup4, lxml, pydub, soundfile, sentence-transformers, pydantic, typer, rich, tqdm) — verified 2026-03-03
-- GitHub: epub_to_audiobook, epub2tts, ebook2audiobook, Alexandria, audiobook-creator — feature analysis via direct repo inspection
-- Ollama structured outputs documentation — https://docs.ollama.com/capabilities/structured-outputs
-- LibriTTS-P GitHub — https://github.com/line/LibriTTS-P
-- W3C EPUB TTS spec — https://www.w3.org/TR/epub-tts-10/
+- MLX 0.31.0: https://pypi.org/project/mlx/ — Python/macOS compatibility, memory management API
+- mlx-audio 0.3.1: https://pypi.org/project/mlx-audio/ — TTS API, model variants, known bugs
+- pedalboard 0.9.22: https://pypi.org/project/pedalboard/ — effects chain API, ARM64 wheel availability
+- Qwen3-TTS official repo: https://github.com/QwenLM/Qwen3-TTS — model variants, voice cloning API
+- Qwen3-TTS technical report: https://arxiv.org/html/2601.15621v1 — architecture, 32K token context
+- Qwen3-TTS discussion #231: https://github.com/QwenLM/Qwen3-TTS/discussions/231 — Base model ignores instruct param (CRITICAL FINDING)
+- Qwen3-TTS discussion #238: https://github.com/QwenLM/Qwen3-TTS/discussions/238 — inline emotion tags are feature request, not capability
+- MLX memory management: https://ml-explore.github.io/mlx/build/html/usage/unified_memory.html — unified memory architecture
+- MLX GitHub issues #742, #1262: memory accumulation patterns confirmed
+- mlx-audio Issue #439: https://github.com/Blaizzy/mlx-audio/issues/439 — accent regression confirmed
+- Pedalboard: https://github.com/spotify/pedalboard — Spotify-maintained, 300x faster than pySoX
+- SpeechBrain ECAPA-TDNN: https://huggingface.co/speechbrain/spkrec-ecapa-voxceleb — speaker verification embeddings
+- Resemblyzer: https://github.com/resemble-ai/Resemblyzer — 256-dim GE2E embeddings
+- ACX Audio Specs 2025-2026: https://narrationbox.com/blog/acx-audio-specs-explained-2025-2026 — peak -3dB, RMS -18 to -23dB, noise -60dB
+- Existing codebase (direct analysis): all modules in `src/` — pipeline structure, interface contracts, data flow
 
 ### Secondary (MEDIUM confidence)
-- Chatterbox MPS: GitHub Issue #336 — https://github.com/resemble-ai/chatterbox/issues/336
-- Chatterbox Turbo Float64 bug: GitHub Issue #93 — https://github.com/devnen/Chatterbox-TTS-Server/issues/93
-- Chatterbox 40-second cutoff: GitHub Issue #76 — https://github.com/resemble-ai/chatterbox/issues/76
-- Chatterbox MPS Apple Silicon: Hugging Face — https://huggingface.co/Jimmi42/chatterbox-tts-apple-silicon-code
-- Ollama context window configuration — https://www.arsturn.com/blog/how-to-increase-ollama-context-window-size
-- Ollama large context degradation: GitHub Issue #9890 — https://github.com/ollama/ollama/issues/9890
-- Context rot research 2025 — https://research.trychroma.com/context-rot
-- LangGraph TTS Architecture (checkpointing patterns) — https://vadim.blog/2026/01/18/langgraph-tts-therapeutic-audio-architecture
-- PyTorch MPS memory management — https://docs.pytorch.org/docs/stable/notes/mps.html
-- MultiActor-Audiobook paper (ISCA 2025) — https://www.isca-archive.org/interspeech_2025/park25e_interspeech.pdf
+- mlx-audio Qwen3-TTS README: https://github.com/Blaizzy/mlx-audio/blob/main/mlx_audio/tts/models/qwen3_tts/README.md — API patterns, 6-bit memory benchmarks (3.88GB)
+- Qwen3-TTS voice cloning guide: https://ocdevel.com/blog/20260302-qwen-tts-voice-cloning — 10-15s sweet spot, transcript boosts similarity 0.75->0.89
+- Qwen3-TTS with MLX-Audio on macOS: https://mybyways.com/blog/qwen3-tts-with-mlx-audio-on-macos — ~1000 chars/min on M2, split_pattern bug
+- Dopamine Audiobook paper: https://arxiv.org/html/2504.11002v1 — "averaged emotion" TTS problem, emotional whiplash
+- Cosine similarity for speaker verification: https://www.researchgate.net/figure/... — 0.60 baseline for same-speaker threshold
+- Ollama Qwen3 14B memory: https://github.com/ollama/ollama/issues/10994 — community benchmarks
+- Resemblyzer minimum audio duration: https://periodicals.karazin.ua/mia/article/view/28479 — 2.63s for reliable embedding
+- Audacity audiobook mastering chain: https://support.audacityteam.org/audio-editing/audiobook-mastering — EQ -> compression -> limiting order
 
 ### Tertiary (LOW confidence)
-- Audiobook narration user expectations — https://www.spoken.press/ai-audiobook-faq
-- ElevenLabs audiobook guide 2026 (marketing) — https://elevenlabs.io/blog/how-to-make-an-audiobook
-- LibriTTS paper (speaker quality variance) — https://arxiv.org/abs/1904.02882
+- Qwen3-TTS performance ~1000 chars/min on M2: https://mybyways.com/blog/qwen3-tts-with-mlx-audio-on-macos — single blog post, M2 not M4
+- 1.7B RAM requirements: https://github.com/kapi2800/qwen3-tts-apple-silicon — refers to non-quantized; 8-bit should be ~3GB
+- LibriTTS-R quality vs LibriTTS-P: https://www.openslr.org/141/ — dataset page, quality benefits not formally benchmarked for this specific use case
 
 ---
-*Research completed: 2026-03-03*
+*Research completed: 2026-03-04*
 *Ready for roadmap: yes*
