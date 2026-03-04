@@ -86,7 +86,10 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. Silence between segments is appropriate to the segment boundary type — sentences, paragraphs, and chapter breaks are audibly distinct
   3. Volume is consistent across different character voices throughout the audiobook — no one voice dominates or disappears
   4. The MP3 file contains ID3 metadata (title, author, chapter names) that audiobook players such as Audiobookshelf can read and display
-**Plans**: TBD
+**Plans**: 3 plans
+- [ ] 05-01-PLAN.md — Assembly models, EPUB metadata extraction, WAV concatenator with silence insertion
+- [ ] 05-02-PLAN.md — LUFS normalization, MP3 encoding, chapter announcement TTS generation
+- [ ] 05-03-PLAN.md — ID3 tagger, assembly orchestrator, CLI command, pipeline integration
 
 ## Progress
 
