@@ -58,7 +58,10 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. For casts that exceed LLM context, embedding similarity fallback kicks in automatically and produces assignments for all remaining characters
   3. No two major characters are assigned the same LibriTTS-P speaker reference
   4. Voice assignments persist across re-runs — re-running the match phase reads `voice_map.json` instead of re-querying the LLM
-**Plans**: TBD
+**Plans**: 3 plans
+- [ ] 03-01-PLAN.md — Data models, LibriTTS-P speaker index, cast classification
+- [ ] 03-02-PLAN.md — LLM trait matcher, embedding similarity fallback, dedup enforcement (TDD)
+- [ ] 03-03-PLAN.md — Matching orchestrator, CLI command, voice_map.json output, pipeline integration
 
 ### Phase 4: TTS Synthesis with Checkpoint/Resume
 **Goal**: Users can synthesize audio for all segments overnight, resume interrupted runs without re-generating completed segments, and track per-segment and per-chapter progress throughout
