@@ -88,13 +88,13 @@ def select_model(override: str | None = None) -> str:
         logger.info("Model override: %s", override)
         return override
 
-    available_gb = psutil.virtual_memory().available / (1024 ** 3)
+    total_gb = psutil.virtual_memory().total / (1024 ** 3)
 
-    if available_gb >= RAM_THRESHOLD_GB:
+    if total_gb >= RAM_THRESHOLD_GB:
         _active_model = MODEL_14B
         logger.info(
-            "Available RAM %.1f GB >= %.1f GB threshold -- using %s",
-            available_gb,
+            "Total RAM %.1f GB >= %.1f GB threshold -- using %s",
+            total_gb,
             RAM_THRESHOLD_GB,
             MODEL_14B,
         )
@@ -102,9 +102,9 @@ def select_model(override: str | None = None) -> str:
     else:
         _active_model = MODEL_8B
         logger.warning(
-            "Available RAM %.1f GB below %.1f GB threshold -- "
+            "Total RAM %.1f GB below %.1f GB threshold -- "
             "falling back to %s (attribution quality may be reduced)",
-            available_gb,
+            total_gb,
             RAM_THRESHOLD_GB,
             MODEL_8B,
         )
