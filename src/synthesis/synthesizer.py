@@ -240,6 +240,7 @@ def run_synthesis(
     restarted_once = False
     wall_start = time.monotonic()
     seg_counter = 0
+    _warned_placeholders: set[str] = set()  # deduplicate placeholder warnings
 
     try:
         for ch_idx, ch_num in enumerate(chapter_numbers):
@@ -266,8 +267,9 @@ def run_synthesis(
                 )
                 rel_wav_path = f"wavs/ch{ch_num:02d}/seg_{seg_id:04d}.wav"
 
-                # Check for placeholder clip paths
-                if ref_clip.startswith("AUDIO_DIR/"):
+                # Check for placeholder clip paths (warn once per character)
+                if ref_clip.startswith("AUDIO_DIR/") and char_name not in _warned_placeholders:
+                    _warned_placeholders.add(char_name)
                     logger.warning(
                         "Placeholder clip path for %s: %s — audio quality may suffer",
                         char_name,

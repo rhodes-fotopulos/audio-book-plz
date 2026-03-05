@@ -29,11 +29,11 @@ logger = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-MODEL_14B = "qwen3:14b"
-"""Ollama model name for Qwen3 14B Q4_K_M (preferred)."""
+MODEL_14B = "qwen3.5:9b"
+"""Ollama model name for Qwen3.5 9B (preferred)."""
 
-MODEL_8B = "qwen3:8b"
-"""Ollama model name for Qwen3 8B Q8_0 (fallback)."""
+MODEL_8B = "qwen3.5:4b"
+"""Ollama model name for Qwen3.5 4B (fallback)."""
 
 DEFAULT_MODEL = MODEL_14B
 """Default model to attempt when no override is specified."""
