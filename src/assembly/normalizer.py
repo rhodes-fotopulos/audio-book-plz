@@ -56,7 +56,7 @@ def normalize_audio(
     max_val = float(2 ** (audio_segment.sample_width * 8 - 1))
     samples = samples / max_val
 
-    # Handle stereo (reshape to 2D) — Chatterbox output is mono but be safe
+    # Handle stereo (reshape to 2D) — TTS output is mono but be safe
     if audio_segment.channels > 1:
         samples = samples.reshape((-1, audio_segment.channels))
 

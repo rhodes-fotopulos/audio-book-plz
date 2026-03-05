@@ -1,17 +1,15 @@
-"""Chapter announcement WAV generation using Chatterbox TTS.
+"""Chapter announcement WAV generation using Qwen3-TTS.
 
 Generates "Chapter N: Title" WAVs using the narrator's voice reference
-from the voice map.  Uses low exaggeration (0.2) for a neutral narrator
-tone.  Resume-safe: skips already-generated announcements.
+from the voice map.  Resume-safe: skips already-generated announcements.
 
-Heavy imports (torch, chatterbox) are deferred until generate_announcements()
-is called, following the Phase 4 late-import pattern.
+Heavy imports (mlx-audio) are deferred until generate_announcements()
+is called, following the late-import pattern.
 """
 
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -26,7 +24,7 @@ def generate_announcements(
     """Generate chapter announcement WAVs using the narrator voice.
 
     For each chapter, synthesizes "Chapter N: Title" (or just "Chapter N"
-    if no title) using Chatterbox TTS with the narrator's reference clip.
+    if no title) using Qwen3-TTS with the narrator's reference clip.
     Skips chapters whose announcement WAV already exists (resume-safe).
 
     Args:
@@ -70,12 +68,12 @@ def generate_announcements(
         logger.info("All %d announcements already exist", len(chapters))
         return announcements
 
-    # Late imports to defer torch/chatterbox loading
+    # Late imports to defer mlx-audio loading
+    from src.synthesis.engine_factory import create_engine
     from src.synthesis.models import SynthesisConfig
-    from src.synthesis.tts_engine import TTSEngine
 
     config = SynthesisConfig(device=device)
-    engine = TTSEngine(config)
+    engine = create_engine(config)
 
     try:
         engine.load_model()
@@ -96,24 +94,20 @@ def generate_announcements(
             wav_path = output_dir / f"announce_ch{num:03d}.wav"
             logger.info("Generating: %s", text)
 
-            # Generate with low exaggeration for neutral narrator tone
-            wav_tensor = engine.generate(
+            # Generate with Qwen3-TTS
+            audio_result = engine.generate(
                 text,
                 ref_clip_path=str(narrator_ref_path),
                 segment_type="narration",
-                exaggeration=0.2,
-                cfg_weight=0.3,
             )
 
-            # Atomic write: .tmp then rename (same pattern as Phase 4)
-            tmp_path = str(wav_path) + ".tmp"
-            import torchaudio
-
-            torchaudio.save(tmp_path, wav_tensor, engine.sample_rate)
-            os.rename(tmp_path, str(wav_path))
-
-            announcements[num] = wav_path
-            logger.info("Saved: %s", wav_path)
+            # Save atomically
+            saved = engine.save_wav_atomic(audio_result, str(wav_path))
+            if saved:
+                announcements[num] = wav_path
+                logger.info("Saved: %s", wav_path)
+            else:
+                logger.warning("Announcement too short for chapter %d — skipped", num)
 
     finally:
         # Always clean up TTS model to free memory

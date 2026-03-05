@@ -3,7 +3,7 @@
 Coordinates the full assembly pipeline:
 1. Validate inputs (wavs/, voice_map.json, attributed.json)
 2. Extract EPUB metadata (title, author, cover)
-3. Generate chapter announcement WAVs via Chatterbox TTS
+3. Generate chapter announcement WAVs via Qwen3-TTS
 4. Per-chapter: concatenate -> effects chain -> normalize LUFS -> export MP3 -> tag ID3
 5. Combine chapter MP3s -> tag with CHAP/CTOC chapter markers
 

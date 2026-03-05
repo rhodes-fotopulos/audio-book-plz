@@ -1,7 +1,7 @@
 """Data models for TTS synthesis.
 
 Defines configuration, per-segment results, and run-level statistics
-for the TTS synthesis pipeline (Qwen3-TTS primary, Chatterbox fallback).
+for the Qwen3-TTS synthesis pipeline.
 
 All models are dataclasses for simplicity and consistency with Phase 1
 parser models.  No external dependencies at import time.
@@ -21,23 +21,13 @@ from dataclasses import dataclass, field
 class SynthesisConfig:
     """Tuneable parameters for a synthesis run.
 
-    Supports both Qwen3-TTS (MLX, primary) and Chatterbox (PyTorch, fallback).
+    Uses Qwen3-TTS via MLX for Apple Silicon TTS.
     Engine selection via ``engine_type`` field.
     """
 
     # Engine selection
     engine_type: str = "qwen3"
-    """TTS engine: 'qwen3' (MLX, primary) or 'chatterbox' (PyTorch, fallback)."""
-
-    # Voice tuning — Chatterbox-specific (ignored by Qwen3-TTS)
-    narration_exaggeration: float = 0.25
-    """Low exaggeration for calm, steady narration delivery (Chatterbox only)."""
-
-    dialogue_exaggeration: float = 0.45
-    """Higher exaggeration for expressive character voices (Chatterbox only)."""
-
-    cfg_weight: float = 0.3
-    """Classifier-free guidance weight (Chatterbox only)."""
+    """TTS engine: 'qwen3' (MLX)."""
 
     # Retry / failure
     max_retries: int = 3
@@ -45,10 +35,6 @@ class SynthesisConfig:
 
     failure_threshold: float = 0.15
     """Stop run if failure rate exceeds this fraction (0-1)."""
-
-    # Memory management — Chatterbox (PyTorch MPS)
-    cleanup_interval: int = 15
-    """Run gc.collect + MPS cache clear every N segments (Chatterbox)."""
 
     # Memory management — Qwen3-TTS (MLX Metal)
     mlx_cache_limit_gb: float = 4.0
@@ -63,7 +49,7 @@ class SynthesisConfig:
 
     # Device selection
     device: str = "auto"
-    """'auto' detects MPS/CPU; also accepts 'mps' or 'cpu' (Chatterbox only)."""
+    """'auto' detects available hardware; also accepts 'mps' or 'cpu'."""
 
 
 # ---------------------------------------------------------------------------

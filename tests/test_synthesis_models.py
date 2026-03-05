@@ -20,12 +20,9 @@ def test_synthesis_config_defaults():
     """Verify all SynthesisConfig defaults match spec values."""
     config = SynthesisConfig()
 
-    assert config.narration_exaggeration == 0.25
-    assert config.dialogue_exaggeration == 0.45
-    assert config.cfg_weight == 0.3
     assert config.max_retries == 3
     assert config.failure_threshold == 0.15
-    assert config.cleanup_interval == 15
+    assert config.mlx_cleanup_interval == 50
     assert config.min_wav_duration_s == 0.1
     assert config.device == "auto"
 
@@ -41,8 +38,7 @@ def test_create_checkpoint():
     assert cp["failed"] == {}
     assert "started_at" in cp
     assert "updated_at" in cp
-    assert cp["config"]["narration_exaggeration"] == 0.25
-    assert cp["config"]["model"] == "chatterbox-500m"
+    assert cp["config"]["model"] == "qwen3-tts-1.7b"
 
 
 def test_save_load_checkpoint(tmp_path: Path):

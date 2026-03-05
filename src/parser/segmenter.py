@@ -18,7 +18,7 @@ from src.parser.models import Segment, SegmentType
 # ---------------------------------------------------------------------------
 
 CHAR_LIMIT = 280
-"""Maximum characters per segment (safe ceiling below Chatterbox's ~300 hard limit)."""
+"""Maximum characters per segment."""
 
 
 # ---------------------------------------------------------------------------

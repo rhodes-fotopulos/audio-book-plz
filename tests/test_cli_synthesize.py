@@ -1,7 +1,7 @@
 """CLI integration tests for the synthesize command.
 
 Tests use typer.testing.CliRunner to verify CLI behavior without
-loading the actual TTS engine (torch/chatterbox are never imported).
+loading the actual TTS engine (mlx-audio is never imported).
 """
 
 from __future__ import annotations

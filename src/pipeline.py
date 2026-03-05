@@ -425,7 +425,7 @@ def run_synthesize(
         dry_run: If True, show estimates without generating audio.
         verbose: If True, show per-segment detail during synthesis.
         cpu: If True, force CPU mode (skip MPS acceleration).
-        engine_type: TTS engine to use (``'qwen3'`` or ``'chatterbox'``).
+        engine_type: TTS engine to use (``'qwen3'``).
         libritts_audio_dir: Path to LibriTTS-R audio directory for voice
             reference preparation with transcripts.
 
@@ -748,7 +748,7 @@ def run_full_pipeline(
         libritts_data_dir: Path to LibriTTS-P data directory (contains df1_en.csv).
         libritts_audio_dir: Path to LibriTTS-R audio directory (optional).
         cpu: If True, force CPU mode for synthesis and assembly.
-        engine_type: TTS engine to use (``'qwen3'`` or ``'chatterbox'``).
+        engine_type: TTS engine to use (``'qwen3'``).
         model_override: If set, force this Ollama model for LLM phases.
         voice_threshold: Cosine similarity threshold for voice consistency.
         mp3_output_dir: If provided, MP3 output goes here instead of book dir.

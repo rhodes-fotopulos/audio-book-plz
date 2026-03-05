@@ -1,7 +1,7 @@
 """Tests for the core synthesis loop (run_synthesis).
 
 All tests use a mocked engine via create_engine to avoid loading
-Chatterbox/torch or MLX/mlx-audio.
+MLX/mlx-audio.
 """
 
 from __future__ import annotations
@@ -321,9 +321,9 @@ def test_engine_checkpoint_compatibility(mock_create_engine, tmp_path):
     # Create a checkpoint from a different engine
     cp = create_checkpoint(
         "test-book", 2, config,
-        engine_name="chatterbox-500m",
-        engine_version="0.1.6",
-        engine_library="chatterbox-tts",
+        engine_name="old-engine",
+        engine_version="0.1.0",
+        engine_library="old-library",
     )
     mark_completed(cp, 0, "wavs/ch01/seg_0000.wav", 1.0, 1.5)
     save_checkpoint(cp, book_dir)

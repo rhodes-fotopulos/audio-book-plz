@@ -37,9 +37,9 @@ def create_checkpoint(
     book_slug: str,
     total_segments: int,
     config: SynthesisConfig,
-    engine_name: str = "chatterbox-500m",
+    engine_name: str = "qwen3-tts-1.7b",
     engine_version: str = "unknown",
-    engine_library: str = "chatterbox-tts",
+    engine_library: str = "mlx-audio",
 ) -> dict:
     """Create a fresh checkpoint dict for a new synthesis run.
 
@@ -68,9 +68,6 @@ def create_checkpoint(
             "library": engine_library,
         },
         "config": {
-            "narration_exaggeration": config.narration_exaggeration,
-            "dialogue_exaggeration": config.dialogue_exaggeration,
-            "cfg_weight": config.cfg_weight,
             "device": config.device,
             "model": engine_name,
         },

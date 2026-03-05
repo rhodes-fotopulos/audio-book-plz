@@ -71,7 +71,7 @@ def convert(
     engine: str = typer.Option(
         "qwen3",
         "--engine",
-        help="TTS engine: qwen3 (MLX, primary) or chatterbox (PyTorch, fallback)",
+        help="TTS engine: qwen3 (MLX)",
     ),
     model: str = typer.Option(
         None,
@@ -245,7 +245,7 @@ def synthesize(
     engine: str = typer.Option(
         "qwen3",
         "--engine",
-        help="TTS engine: qwen3 (MLX, primary) or chatterbox (PyTorch, fallback)",
+        help="TTS engine: qwen3 (MLX)",
     ),
     cpu: bool = typer.Option(
         False,
@@ -260,7 +260,7 @@ def synthesize(
         envvar="LIBRITTS_R_AUDIO",
     ),
 ) -> None:
-    """Synthesize audio segments with TTS engine (Qwen3-TTS or Chatterbox)."""
+    """Synthesize audio segments with Qwen3-TTS."""
     # Validate prerequisites
     voice_map_file = book_dir / "voice_map.json"
     attributed_file = book_dir / "attributed.json"

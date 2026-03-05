@@ -1,8 +1,8 @@
 """TTS synthesis package for audio-book-plz.
 
-Provides multi-engine TTS support (Qwen3-TTS via MLX, Chatterbox via PyTorch),
-checkpoint/resume with engine versioning, text chunking, voice reference
-preparation, and progress reporting for overnight audiobook synthesis runs.
+Provides Qwen3-TTS via MLX with checkpoint/resume, engine versioning,
+text chunking, voice reference preparation, and progress reporting for
+overnight audiobook synthesis runs.
 """
 
 from src.synthesis.checkpoint import (
@@ -14,7 +14,7 @@ from src.synthesis.checkpoint import (
     save_checkpoint,
     validate_checkpoint,
 )
-from src.synthesis.chunker import chunk_text_chatterbox, chunk_text_qwen
+from src.synthesis.chunker import chunk_text_qwen
 from src.synthesis.engine_base import AudioResult, TTSEngineBase
 from src.synthesis.engine_factory import create_engine
 from src.synthesis.models import SegmentResult, SynthesisConfig, SynthesisStats
@@ -34,7 +34,6 @@ __all__ = [
     "run_synthesis",
     # Text chunking
     "chunk_text_qwen",
-    "chunk_text_chatterbox",
     # Post-processing
     "apply_speech_act_adjustments",
     # Checkpoint

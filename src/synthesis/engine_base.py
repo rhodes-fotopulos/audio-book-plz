@@ -1,9 +1,8 @@
 """Abstract TTS engine interface for audio-book-plz.
 
-Defines the contract that all TTS engines (Qwen3-TTS, Chatterbox) must
-implement.  The ``AudioResult`` dataclass provides a uniform numpy-based
-return type so no framework-specific types (torch.Tensor, mx.array) leak
-beyond the engine boundary.
+Defines the contract that TTS engines must implement.  The ``AudioResult``
+dataclass provides a uniform numpy-based return type so no framework-specific
+types (mx.array) leak beyond the engine boundary.
 
 The ``save_wav_atomic`` method and ``ensure_ollama_unloaded`` helper are
 concrete on the base class — shared by all engines.
@@ -56,7 +55,6 @@ class TTSEngineBase(ABC):
     """Contract for TTS engines used by the synthesis pipeline.
 
     Subclasses:
-    - ``ChatterboxEngine`` — PyTorch/MPS, Chatterbox 500M
     - ``QwenTTSEngine`` — MLX/Metal, Qwen3-TTS 1.7B Base
 
     Usage::
@@ -93,7 +91,7 @@ class TTSEngineBase(ABC):
             text: Speech-ready text to synthesise.
             ref_clip_path: Path to reference voice WAV clip.
             ref_transcript: Transcript of the reference clip (Qwen3-TTS
-                uses this for better cloning; Chatterbox ignores it).
+                uses this for better cloning).
             segment_type: ``'narration'`` or ``'dialogue'``.
 
         Returns:
@@ -116,7 +114,7 @@ class TTSEngineBase(ABC):
     @property
     @abstractmethod
     def engine_name(self) -> str:
-        """Short identifier, e.g. ``'qwen3-tts-1.7b'``, ``'chatterbox-500m'``."""
+        """Short identifier, e.g. ``'qwen3-tts-1.7b'``."""
 
     @property
     @abstractmethod

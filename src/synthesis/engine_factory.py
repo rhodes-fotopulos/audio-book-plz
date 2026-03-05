@@ -1,6 +1,6 @@
 """TTS engine factory — creates the right engine from config.
 
-Lazy imports keep heavy dependencies (torch OR mlx) from loading until
+Lazy imports keep heavy dependencies (mlx) from loading until
 the selected engine is actually instantiated.
 """
 
@@ -13,7 +13,7 @@ from src.synthesis.models import SynthesisConfig
 
 logger = logging.getLogger(__name__)
 
-_SUPPORTED_ENGINES = ("qwen3", "chatterbox")
+_SUPPORTED_ENGINES = ("qwen3",)
 
 
 def create_engine(config: SynthesisConfig) -> TTSEngineBase:
@@ -35,12 +35,6 @@ def create_engine(config: SynthesisConfig) -> TTSEngineBase:
 
         logger.info("Creating Qwen3-TTS engine")
         return QwenTTSEngine(config)
-
-    if engine_type == "chatterbox":
-        from src.synthesis.chatterbox_engine import ChatterboxEngine
-
-        logger.info("Creating Chatterbox engine")
-        return ChatterboxEngine(config)
 
     raise ValueError(
         f"Unknown engine_type '{config.engine_type}'. "

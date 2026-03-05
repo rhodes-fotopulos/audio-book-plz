@@ -1,17 +1,15 @@
-"""Core synthesis loop with multi-engine support, fallback, and resume.
+"""Core synthesis loop with Qwen3-TTS engine, retry, and resume.
 
-Iterates segments chapter-by-chapter, generates audio via the configured
-TTS engine (Qwen3-TTS or Chatterbox), handles failures with retry logic
-and automatic engine fallback, saves checkpoint after every segment, and
-reports progress.  Designed for overnight unattended operation.
+Iterates segments chapter-by-chapter, generates audio via Qwen3-TTS,
+handles failures with retry logic, saves checkpoint after every segment,
+and reports progress.  Designed for overnight unattended operation.
 
 v1.1 changes:
 - Engine abstraction via ``create_engine()`` / ``TTSEngineBase``
-- Qwen3-TTS as primary engine, Chatterbox as fallback
+- Qwen3-TTS as primary engine
 - Engine-versioned checkpoints with auto-archive on mismatch
-- Sentence-boundary text chunking (500-600 chars for Qwen3, 280 for Chatterbox)
+- Sentence-boundary text chunking (500-600 chars for Qwen3)
 - Voice reference preparation with transcripts for improved cloning
-- Per-segment Qwen3 -> Chatterbox fallback with summary reporting
 """
 
 from __future__ import annotations
@@ -35,7 +33,7 @@ from src.synthesis.checkpoint import (
     save_checkpoint,
     validate_checkpoint,
 )
-from src.synthesis.chunker import chunk_text_chatterbox, chunk_text_qwen
+from src.synthesis.chunker import chunk_text_qwen
 from src.synthesis.engine_base import AudioResult
 from src.synthesis.engine_factory import create_engine
 from src.synthesis.models import SegmentResult, SynthesisConfig, SynthesisStats
@@ -43,13 +41,6 @@ from src.synthesis.post_processor import apply_speech_act_adjustments
 from src.synthesis.progress import SynthesisProgress
 
 logger = logging.getLogger(__name__)
-
-
-def _select_chunker(engine_type: str):
-    """Return the appropriate text chunker for the engine type."""
-    if engine_type == "qwen3":
-        return chunk_text_qwen
-    return chunk_text_chatterbox
 
 
 def _generate_segment_audio(
@@ -102,11 +93,10 @@ def run_synthesis(
     1. Loads or creates an engine-versioned checkpoint for crash recovery.
     2. Checks engine compatibility and archives old checkpoints on mismatch.
     3. Prepares voice references with transcripts (if libritts_root provided).
-    4. Loads the configured TTS engine (Qwen3-TTS or Chatterbox).
+    4. Loads the configured TTS engine (Qwen3-TTS).
     5. Iterates segments chapter-by-chapter, generating audio.
-    6. Falls back to Chatterbox on per-segment Qwen3 failures.
-    7. Saves checkpoint after every segment.
-    8. Reports progress with Rich bars and synthesis.log.
+    6. Saves checkpoint after every segment.
+    7. Reports progress with Rich bars and synthesis.log.
 
     Args:
         book_dir: Book output directory (contains voice_map.json etc.).
@@ -202,9 +192,7 @@ def run_synthesis(
             config,
             engine_name=engine.engine_name,
             engine_version=engine.engine_version,
-            engine_library=(
-                "mlx-audio" if config.engine_type == "qwen3" else "chatterbox-tts"
-            ),
+            engine_library="mlx-audio",
         )
 
     pending = get_pending_segments(cp, all_segment_ids)
@@ -228,20 +216,6 @@ def run_synthesis(
 
     # ---- Load TTS engine ----
     engine.load_model()
-
-    # ---- Fallback engine (lazy — only created on first Qwen3 failure) ----
-    fallback_engine = None
-    fallback_events: list[dict] = []
-
-    # ---- Select text chunker ----
-    chunker = _select_chunker(config.engine_type)
-
-    # ---- Cleanup interval ----
-    cleanup_interval = (
-        config.mlx_cleanup_interval
-        if config.engine_type == "qwen3"
-        else config.cleanup_interval
-    )
 
     # ---- Progress display ----
     progress = SynthesisProgress(
@@ -306,7 +280,7 @@ def run_synthesis(
                 for attempt in range(1, config.max_retries + 1):
                     try:
                         text = seg.get("text", "")
-                        text_chunks = chunker(text)
+                        text_chunks = chunk_text_qwen(text)
 
                         gen_start = time.monotonic()
                         audio_result = _generate_segment_audio(
@@ -428,88 +402,6 @@ def run_synthesis(
                                     save_checkpoint(cp, book_dir)
                                     raise
 
-                # ---- Auto-fallback: Qwen3 -> Chatterbox ----
-                if (
-                    not success
-                    and config.engine_type == "qwen3"
-                ):
-                    try:
-                        # Lazy-create fallback engine on first failure
-                        if fallback_engine is None:
-                            progress.log_message(
-                                "Creating Chatterbox fallback engine..."
-                            )
-                            fallback_config = SynthesisConfig(
-                                engine_type="chatterbox",
-                                device=config.device,
-                                narration_exaggeration=config.narration_exaggeration,
-                                dialogue_exaggeration=config.dialogue_exaggeration,
-                                cfg_weight=config.cfg_weight,
-                            )
-                            fallback_engine = create_engine(fallback_config)
-                            fallback_engine.load_model()
-
-                        # Re-chunk for Chatterbox (smaller chunks)
-                        text = seg.get("text", "")
-                        fb_chunks = chunk_text_chatterbox(text)
-
-                        gen_start = time.monotonic()
-                        audio_result = _generate_segment_audio(
-                            fallback_engine, fb_chunks, ref_clip, None, seg_type
-                        )
-                        gen_time = time.monotonic() - gen_start
-
-                        # Apply speech-act post-processing
-                        speech_act = seg.get("speech_act", "spoken")
-                        if speech_act != "spoken":
-                            adj_audio, _ = apply_speech_act_adjustments(
-                                audio_result.audio,
-                                audio_result.sample_rate,
-                                speech_act,
-                            )
-                            audio_result = AudioResult(
-                                audio=adj_audio,
-                                sample_rate=audio_result.sample_rate,
-                                duration_s=len(adj_audio) / audio_result.sample_rate,
-                            )
-
-                        saved = fallback_engine.save_wav_atomic(
-                            audio_result, wav_path
-                        )
-                        if saved:
-                            duration = audio_result.duration_s
-                            result = SegmentResult(
-                                segment_id=seg_id,
-                                wav_path=rel_wav_path,
-                                duration_s=duration,
-                                generation_time_s=gen_time,
-                                character_name=char_name,
-                                success=True,
-                                attempts=config.max_retries + 1,
-                            )
-                            mark_completed(
-                                cp, seg_id, rel_wav_path, duration, gen_time
-                            )
-                            progress.update_segment(result)
-                            completed_count += 1
-                            total_audio_s += duration
-                            success = True
-
-                            fallback_events.append({
-                                "segment_id": seg_id,
-                                "error": last_error,
-                            })
-                            progress.log_message(
-                                f"Qwen3 failed seg_{seg_id:04d}, "
-                                f"falling back to Chatterbox: {last_error[:80]}"
-                            )
-
-                    except Exception as fb_exc:
-                        progress.log_message(
-                            f"Chatterbox fallback also failed for seg_{seg_id:04d}: "
-                            f"{fb_exc}"
-                        )
-
                 if not success:
                     result = SegmentResult(
                         segment_id=seg_id,
@@ -531,7 +423,7 @@ def run_synthesis(
                 seg_counter += 1
 
                 # Periodic memory cleanup
-                if seg_counter % cleanup_interval == 0:
+                if seg_counter % config.mlx_cleanup_interval == 0:
                     engine.cleanup_memory()
 
                 # Check failure threshold
@@ -573,7 +465,7 @@ def run_synthesis(
 
                 try:
                     text = seg.get("text", "")
-                    text_chunks = chunker(text)
+                    text_chunks = chunk_text_qwen(text)
                     gen_start = time.monotonic()
 
                     audio_result = _generate_segment_audio(
@@ -610,21 +502,6 @@ def run_synthesis(
 
             save_checkpoint(cp, book_dir)
 
-        # ---- Fallback summary ----
-        if fallback_events:
-            total_segs = completed_count + failed_count
-            fb_rate = len(fallback_events) / max(total_segs, 1)
-            progress.log_message(
-                f"Fallback summary: {len(fallback_events)} segments fell back "
-                f"to Chatterbox out of {total_segs}"
-            )
-            if fb_rate > 0.1:
-                logger.warning(
-                    "High fallback rate (%.1f%%) — consider investigating "
-                    "Qwen3-TTS issues",
-                    fb_rate * 100,
-                )
-
     finally:
         wall_time = time.monotonic() - wall_start
 
@@ -645,7 +522,5 @@ def run_synthesis(
 
         # Cleanup
         engine.unload()
-        if fallback_engine is not None:
-            fallback_engine.unload()
 
     return stats
