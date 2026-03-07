@@ -1,461 +1,286 @@
-# Feature Research: v1.1 Pipeline Quality Improvements
+# Feature Landscape: v1.2 Voice Expression
 
-**Domain:** AI audiobook production pipeline (EPUB-to-audiobook, multi-voice)
-**Researched:** 2026-03-04
-**Confidence:** MEDIUM-HIGH (tech stack verified via official sources and community implementations; Qwen3-TTS emotion + voice cloning interaction is LOW confidence due to open limitations)
-
-## Critical Discovery: Emotion + Voice Cloning Gap
-
-Before categorizing features, a research-critical finding: **Qwen3-TTS Base model (voice cloning) does NOT support the `instruct` parameter for emotion control.** The instruction/emotion system only works with the CustomVoice model's 9 preset speakers (Ryan, Aiden, etc.), not with cloned voices from reference audio.
-
-This means the planned three-layer emotion system cannot work as originally conceived with voice cloning. Workarounds exist (fine-tuning, VoiceDesign, text-inherent emotion from semantic understanding) but the "cloned voice + explicit emotion instruction" combination is an unsolved problem in the Qwen3-TTS ecosystem as of March 2026.
-
-**Confidence:** HIGH -- confirmed via official GitHub discussions (#231, #238) and HuggingFace model card.
-
-**Impact:** The emotion system design must be revised to work through text-semantic inference (automatic) + speech-act tag mapping (parameter tweaks) rather than explicit emotion instructions passed to the TTS engine.
+**Domain:** Expressive TTS conditioning for AI audiobook pipeline
+**Researched:** 2026-03-06
+**Confidence:** MEDIUM (Qwen3-TTS Base model limitations confirmed via official sources; VoiceDesign workaround is verified but untested in this codebase; emotion-to-prosody effectiveness is empirically dependent)
 
 ---
 
-## Feature Landscape
+## Critical Context: What Already Exists
 
-### Table Stakes (Baseline Quality for AI Audiobook)
+Before mapping features, the existing system must be understood. v1.1 shipped these components that v1.2 builds on:
 
-Features that any audiobook pipeline must have. Missing these means the output sounds noticeably AI-generated or unprofessional.
+| Component | Status | Where | What It Produces |
+|-----------|--------|-------|------------------|
+| `VoiceBaseline` | Extracted, never consumed by TTS | `attribution/models.py` | pace, tone, energy, typical_emotion, description per character |
+| `VoiceQualities` | Used by voice matching only | `attribution/models.py` | pitch, pace, tone, accent per character |
+| `SceneMood` | Extracted, never consumed by TTS | `attribution/emotion/models.py` | mood (8 categories), intensity, description per scene |
+| `LineOverride` | Extracted, never consumed by TTS | `attribution/emotion/models.py` | emotion, intensity, reason per high-contrast line |
+| Speech-act tags | Consumed by post-processor | `synthesis/post_processor.py` | volume/speed adjustments for whispered/shouted/thought |
+| `QwenTTSEngine.generate()` | Only uses text + ref_audio + ref_text | `synthesis/qwen_engine.py` | Raw audio with no style conditioning |
 
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| Consistent volume/loudness across segments | Listeners notice jarring volume shifts immediately | LOW | Already implemented (LUFS -19.0 via pyloudnorm). Keep as-is. |
-| No audio clicks/pops at segment boundaries | Clicks are the #1 "this sounds AI-generated" artifact | LOW | Not currently handled. Fade-in/fade-out at segment edges (5-10ms) eliminates this. Part of feature 8. |
-| Correct speaker attribution | Wrong voice on a dialogue line breaks immersion completely | MEDIUM | Already implemented via Qwen3 8B. Feature 4 improves accuracy. |
-| Distinct voices per character | Identical voices for different characters is confusing | MEDIUM | Already implemented via LibriTTS-P voice cloning. Feature 1 improves cloning quality. |
-| Natural pause timing | Fixed-duration silence between every segment sounds robotic | LOW | Currently fixed values. Feature 7 adds randomization within ranges. |
-| Accurate dialogue/narration detection | Misclassified narration as dialogue (or vice versa) puts wrong voice on text | MEDIUM | Currently regex-based. Feature 6 replaces with LLM. |
-| Clean audio (no artifacts, noise, distortion) | Any non-speech audio is distracting in a long-form listen | MEDIUM | Feature 8 adds professional post-processing chain. |
-
-### Differentiators (Quality Gap Closers Toward Professional Audiobook)
-
-Features that close the gap between "functional AI audiobook" and "enjoyable multi-hour listen."
-
-| Feature | Value Proposition | Complexity | Notes |
-|---------|-------------------|------------|-------|
-| Text-inherent emotional prosody (Qwen3-TTS) | Model infers emotion from text semantics -- "I hate you!" sounds angry without being told | HIGH (TTS swap) | The engine upgrade IS the differentiator. Qwen3-TTS deeply integrates text semantic understanding to adjust tone, rhythm, emotional expression automatically. |
-| Longer, smoother segments (500-600 chars) | Fewer seam points = fewer voice drift opportunities, better prosody continuity | LOW (once TTS swapped) | Chatterbox hard limit ~300 chars. Qwen3-TTS handles much longer text. Reduces total segment count ~40-50%. |
-| Voice consistency verification + regeneration | Detect segments where voice drifts from reference and regenerate them | HIGH | Novel for local pipelines. Uses speaker embeddings (Resemblyzer) for cosine similarity comparison against reference. |
-| LLM-based dialogue detection with speech-act tagging | Tags spoken/thought/shouted/whispered -- goes beyond binary dialogue/narration | MEDIUM | No open-source audiobook tool does this. Feeds emotion mapping and synthesis parameter selection. |
-| Professional mastering chain | EQ + compression + limiting brings output to ACX broadcast standard | MEDIUM | Spotify's pedalboard library provides studio-quality effects. Most competitors only normalize loudness. |
-| Context-aware randomized pauses | Variable silence mimics human narrator's natural rhythm and cadence | LOW | Simple but impactful. Professional audiobooks vary pause timing by context. |
-
-### Anti-Features (Commonly Desired, Actually Problematic for This Project)
-
-| Feature | Why Requested | Why Problematic | Alternative |
-|---------|---------------|-----------------|-------------|
-| Explicit per-line emotion instructions with cloned voices | "I want angry Harry, sad Hermione" | Base model ignores `instruct` param for cloned voices; fine-tuning required per voice; CustomVoice only has 9 presets | Rely on Qwen3-TTS text-semantic emotion inference. The model reads the text and infers emotion automatically. Supplement with speech-act tags mapped to synthesis parameters. |
-| Real-time emotion slider/controls | Manual tuning per segment | 3000+ segments per book makes manual tuning impractical | Automated system with sensible defaults. Manual override only for flagged segments in future versions. |
-| Multiple TTS engines for different character types | "Use engine A for female, engine B for male" | Memory constraints (16GB), voice consistency impossible across engines, doubles complexity | Single engine (Qwen3-TTS 1.7B) for all voices. Voice variety comes from reference audio diversity in LibriTTS-P (2,443 speakers). |
-| De-essing as default post-processing | "Remove sibilance like pro audio" | ACX explicitly warns against de-essing -- it often does more harm than good with synthetic speech. TTS rarely has the same sibilance issues as microphone recordings. | Omit de-essing. Apply manually only if specific voices exhibit sibilance in listening tests. |
-| Ultra-long reference clips (30+ seconds) | "More reference = better clone" | Quality plateaus at 10-15s and degrades beyond. >30s clips cause generation hangs in Qwen3-TTS. | Target 10-15s clean reference clips with SNR filtering. |
-| Inline emotion tag markup per sentence | "Tag each sentence with (angry) or (sad)" | Qwen3-TTS lacks reliable mid-paragraph emotion switching (GitHub discussion #238). Structured tags are a feature request, not a capability. | Rely on per-segment text semantics. Split scenes with strong emotion shifts into separate segments naturally at sentence boundaries. |
+**The gap:** Rich emotion and voice data is extracted by the LLM but never reaches the TTS engine. The pipeline generates the same prosody whether a character is "whispering in terror" or "shouting with joy" -- only post-processing volume/speed adjustments differentiate speech acts.
 
 ---
 
-## The 9 Target Features: Detailed Analysis
+## Critical Technical Constraint: Base Model Has No Instruct Parameter
 
-### Feature 1: Qwen3-TTS 1.7B Swap (Replacing Chatterbox)
+**Confidence: HIGH** (confirmed via HuggingFace model card, official GitHub, mlx-audio docs)
 
-**Category:** Differentiator (foundational -- everything else depends on this)
-**Complexity:** HIGH
-**Priority:** P1
+The project uses `Qwen3-TTS-12Hz-1.7B-Base` via mlx-audio. This model variant does **not** accept an `instruct` parameter. The `generate()` / `generate_voice_clone()` API accepts only:
 
-**What it does:** Replaces Chatterbox TTS engine (PyTorch, MPS, ~300 char limit, exaggeration/cfg_weight params) with Qwen3-TTS 1.7B Base model via mlx-audio (Apple Silicon native via MLX, ~32K token context, 3s minimum voice cloning, text-semantic emotion).
+- `text` -- the content to speak
+- `ref_audio` -- reference voice clip
+- `ref_text` -- transcript of reference clip
+- Standard generation kwargs (`max_new_tokens`, `top_p`, etc.)
 
-**Expected behavior:**
-- Load `Qwen3-TTS-12Hz-1.7B-Base` (8-bit quantized) via `mlx_audio.tts.utils.load_model()`
-- Voice cloning: `generate(text=..., ref_audio=..., ref_text=..., lang_code="English")`
-- Reference audio: provide both the WAV file AND a transcript for best cloning fidelity
-- Output: audio as `mx.array`, convert to WAV via soundfile or similar
-- Throughput: ~1000 chars/minute on M2 (M4 should be faster)
-- Memory: 1.7B 8-bit ~= 2-4GB model weight. Fits in 16GB when Ollama is unloaded.
-- Long-form: stable synthesis exceeding 10 minutes. Handles chunking internally for voice cloning mode.
+Style/emotion instructions (`instruct` parameter) only work with:
+- **CustomVoice** model -- 9 preset speakers, no voice cloning
+- **VoiceDesign** model -- generates new voices from descriptions, no cloning
 
-**Key differences from Chatterbox:**
-
-| Aspect | Chatterbox | Qwen3-TTS Base |
-|--------|-----------|----------------|
-| Framework | PyTorch (MPS with fallback) | MLX (Apple Silicon native) |
-| Char limit | ~300 hard limit | ~32K tokens (effectively unlimited for segments) |
-| Emotion control | `exaggeration` float param | Text-semantic inference (automatic) |
-| Voice cloning input | `audio_prompt_path` (WAV only) | `ref_audio` + `ref_text` (WAV + transcript) |
-| Min reference length | ~5 seconds | 3 seconds |
-| Sample rate | Model-dependent | 12Hz token rate, reconstructed to audio |
-| MPS setup | Manual component migration, CPU fallback | Not needed (MLX handles Metal natively) |
-
-**Verified via:** Official Qwen3-TTS repo (HIGH), mlx-audio README (HIGH), HuggingFace model card (HIGH), technical report arxiv 2601.15621 (HIGH).
+**You cannot combine voice cloning with explicit emotion instructions in a single model call.** This is the fundamental constraint shaping all v1.2 features.
 
 ---
 
-### Feature 2: Larger Chunk Sizes (500-600 chars)
+## Table Stakes
 
-**Category:** Differentiator (prosody quality)
-**Complexity:** LOW (once feature 1 lands)
-**Priority:** P1 (ships with TTS swap)
+Features users expect from an expressive audiobook. Missing these means the "voice expression" milestone delivers no perceptible improvement.
 
-**What it does:** Increases `CHAR_LIMIT` in `segmenter.py` from 280 to 500-600 characters.
-
-**Expected behavior:**
-- Fewer segments per book (~40-50% reduction)
-- Better intra-sentence prosody (no mid-sentence splits)
-- Faster total synthesis time (fewer calls, less overhead)
-- The Qwen3-Audiobook-Converter project defaults to 1200-word chunks, suggesting much larger is viable
-- Start at 500 chars, test quality, potentially increase
-
-**Risks:**
-- Very long segments may cause voice drift within a single generation
-- Need empirical testing to find the sweet spot
-- Sentence boundary splitting logic remains important -- just with a higher ceiling
-
-**Dependency:** Requires feature 1 (Chatterbox has hard ~300 char limit).
+| Feature | Why Expected | Complexity | Dependencies | Notes |
+|---------|--------------|------------|--------------|-------|
+| Unified voice_profile field | Two overlapping voice models (VoiceQualities + VoiceBaseline) creates confusion and inconsistency in matching | LOW | None -- pure data model refactor | Merge into single `VoiceProfile` with all fields. voice_qualities.tone and voice_baseline.tone currently duplicate. |
+| Voice profile consumed by voice matching | Currently VoiceQualities drives matching; VoiceBaseline is ignored | LOW | Unified voice_profile | trait_matcher and embedding_matcher should use the richer unified profile for better speaker selection |
+| Scene mood influences synthesis | Emotion data is extracted but thrown away -- the emotion system is inert | MEDIUM | Requires a conditioning pathway to TTS | The hardest table-stakes item because Base model has no instruct param |
+| Line-level emotion overrides influence synthesis | High-contrast moments (laughing at a funeral) should sound different | MEDIUM | Scene mood pathway must exist first | Overrides are sparse (few per chapter) so the mechanism can be simpler |
 
 ---
 
-### Feature 3: Longer Voice References (REVISED: 10-15s, not 20-30s)
+## Differentiators
 
-**Category:** Table stakes improvement
-**Complexity:** LOW
-**Priority:** P1 (ships with TTS swap)
+Features that move beyond "functional" to "notably expressive." Not expected but valued by anyone doing A/B comparison.
 
-**REVISED TARGET: 10-15 seconds, not 20-30 seconds.** Research conclusively shows quality scales linearly from 3 to 15 seconds, then plateaus and eventually degrades. The Qwen3-TTS ecosystem warns that clips >30s cause generation hangs. The `ref_audio_max_seconds` parameter defaults to 30s as a safety cap, not a target.
-
-**What it does:** Updates `clip_selector.py` to:
-1. Select reference clips in the 10-15 second duration range (not just longest)
-2. Apply SNR (signal-to-noise ratio) filtering to reject noisy clips
-3. Provide transcript of reference audio (`ref_text` parameter) for improved cloning
-4. Optionally concatenate shorter clips from the same speaker to reach target duration
-
-**Implementation notes:**
-- LibriTTS-R includes transcripts in `.normalized.txt` files alongside each WAV
-- Current selector picks longest clip (by file size proxy) -- change to target 10-15s range
-- At 24kHz mono 16-bit, 10s = 480KB, 15s = 720KB -- use these as size range targets
-- SNR estimation: measure RMS of silence segments vs speech segments
-
-**Dependency:** Requires feature 1 (`ref_text` parameter is Qwen3-TTS specific).
+| Feature | Value Proposition | Complexity | Dependencies | Notes |
+|---------|-------------------|------------|--------------|-------|
+| VoiceDesign-then-Clone pipeline for per-character style | Generate a reference clip using VoiceDesign with character's voice_profile description, then clone from it -- bakes style into the voice itself | HIGH | VoiceDesign model via mlx-audio, voice_profile description field | The official recommended approach for combining style with cloning. Requires loading VoiceDesign model during voice prep (one-time per character). |
+| Three-layer TTS conditioning stack | voice_profile (constant per character) + scene mood (varies per scene) + line override (rare) cascading to influence synthesis | HIGH | All table-stakes items above | The architecture goal. How each layer actually reaches the TTS is the design challenge. |
+| Emotion-to-text-cue injection | Prepend contextual text cues based on scene mood/line override to leverage Qwen3-TTS's text-semantic understanding | MEDIUM | Scene mood data, synthesizer integration | e.g., prepending "[speaking softly, with sadness]" before the text. Qwen3-TTS infers prosody from text semantics. Effectiveness varies -- needs empirical testing. |
+| Speech-act-aware post-processing expansion | Extend current volume/speed adjustments to include emotion-mapped parameters (e.g., sad = slower pace, angry = faster pace + slight volume boost) | LOW | Emotion data flow to post-processor | Builds on existing `SPEECH_ACT_PARAMS` pattern. Low risk, additive. |
+| Cached voice_clone_prompt per character | Pre-compute `create_voice_clone_prompt()` once per character and reuse across all segments -- faster synthesis, more consistent voice | LOW | mlx-audio API support for `voice_clone_prompt` | Currently re-processes ref_audio for every segment. Caching eliminates redundant computation. |
 
 ---
 
-### Feature 4: LLM Model Upgrade for Attribution
+## Anti-Features
 
-**Category:** Table stakes improvement
-**Complexity:** LOW
-**Priority:** P2 (independent of TTS swap)
+Features to explicitly NOT build. Each has been considered and rejected for specific reasons.
 
-**What it does:** Upgrades Ollama LLM from `qwen3:8b` Q4_K_M to either `qwen3:14b` Q4_K_M or `qwen3:8b` Q8_0 for better attribution accuracy.
-
-**Expected behavior:**
-- `qwen3:14b` Q4_K_M: ~9GB VRAM, better reasoning, ~2x slower
-- `qwen3:8b` Q8_0: ~8.5GB VRAM, same architecture but fewer quantization artifacts
-- Either fits in 16GB when TTS is not running (sequential phase design)
-- Attribution prompts unchanged -- same structured output format
-- Expect 5-15% reduction in low-confidence attributions
-
-**Recommendation:** Start with `qwen3:8b` Q8_0 (easiest swap, measurable improvement, minimal speed impact). Move to 14b if attribution errors are still problematic after testing.
-
-**Dependency:** Independent. Can ship before, with, or after TTS swap.
-
----
-
-### Feature 5: Three-Layer Emotion System (REVISED DESIGN)
-
-**Category:** Differentiator
-**Complexity:** HIGH
-**Priority:** P2 (depends on features 1 and 6)
-
-**Original design:** Character baseline + scene mood + line overrides via `instruct` parameter.
-
-**REVISED design (given Base model limitation):** The emotion system must work through three mechanisms that do NOT use the `instruct` parameter:
-
-**Layer 1 -- Text-Semantic Emotion (automatic, no code needed):**
-Qwen3-TTS automatically infers emotion from text content. "I hate you!" sounds angry. "She whispered softly" sounds gentle. This is the primary emotion channel and works with voice cloning out of the box. The model "adaptively adjusts tone, rhythm, and emotional expression based on text semantics." This layer is FREE -- it comes with feature 1.
-
-**Layer 2 -- Speech-Act Tag Mapping (from feature 6):**
-When the LLM dialogue detector tags a line as whispered/shouted/thought:
-- **Whispered:** Post-process with volume reduction + slight high-frequency boost, or prepend contextual text cue
-- **Shouted:** Post-process with slight volume boost + compression
-- **Thought/internal monologue:** Route to narrator voice instead of character voice (already partially handled -- narration goes to narrator)
-- **Spoken (default):** No modification
-
-**Layer 3 -- Scene Context via Text (text modification):**
-For narration segments, the LLM can be prompted to detect scene mood and prepend brief context markers. Example: in a tense confrontation scene, surrounding narration text ("He snarled", "she snapped") already primes the model. For ambiguous scenes, inject subtle text cues.
-
-**Expected behavior:**
-- No explicit emotion instructions passed to TTS engine
-- Emotion comes from: text semantics (inherent) + speech-act tags (mapped to post-processing) + text-level context
-- Quality improvement is subtle but cumulative over 3000+ segments
-- Whispered text genuinely sounds softer; shouted text has more energy
-
-**Dependency:** Feature 1 (Qwen3-TTS semantic understanding) + Feature 6 (speech-act tags). Layer 1 is effectively free once Qwen3-TTS is integrated.
-
----
-
-### Feature 6: LLM-Based Dialogue Detection
-
-**Category:** Table stakes improvement + Differentiator
-**Complexity:** MEDIUM
-**Priority:** P2
-
-**What it does:** Replaces regex-based dialogue detection in `segmenter.py` with LLM classification that also tags speech acts.
-
-**Expected behavior:**
-- LLM receives paragraph text + surrounding context (2 paragraphs before/after)
-- Returns per-segment: `type` (dialogue/narration/scene_break) + `speech_act` (spoken/thought/shouted/whispered/narrated)
-- Handles edge cases regex misses:
-  - Indirect speech ("She told him she was leaving")
-  - Mixed dialogue + narration paragraphs
-  - Unquoted dialogue (common in literary fiction)
-  - Multi-paragraph dialogue spanning quote boundaries
-  - Internal monologue without quotes
-- Speech-act tags feed feature 5's emotion mapping
-
-**Implementation approach:**
-- Run as part of Phase 2 (LLM is already loaded for attribution)
-- Can be a pre-pass before attribution: detect dialogue type first, then attribute speakers
-- Use structured output (same Pydantic pattern as existing `ChapterAttributionResult`)
-- Cache results per chapter for incremental re-runs (same pattern as attribution cache)
-- Batch process per chapter to minimize LLM calls
-
-**Trade-offs:**
-- LLM calls are slower than regex (~seconds vs microseconds per chapter)
-- But runs once and caches; wall-time impact is modest (attribution already takes minutes per chapter)
-- Accuracy improvement is significant for books with non-standard quoting conventions
-
-**Dependency:** Feature 4 (better LLM) improves detection quality. Feature 5 (emotion) consumes speech-act tags.
-
----
-
-### Feature 7: Randomized Pause Timing
-
-**Category:** Table stakes
-**Complexity:** LOW
-**Priority:** P2 (independent)
-
-**What it does:** Replaces fixed silence durations in `concatenator.py` with randomized values within context-aware ranges.
-
-**Expected behavior:**
-
-| Boundary Type | Current (fixed) | Proposed (range) |
-|--------------|-----------------|------------------|
-| Sentence | 400ms | 300-500ms |
-| Paragraph | 900ms | 700-1100ms |
-| Scene break | 2500ms | 2000-3000ms |
-| Chapter transition | 1500ms | 1200-1800ms |
-| Speaker change (NEW) | N/A | 500-800ms |
-| Post-question (NEW) | N/A | +100-200ms extra |
-
-**Implementation:**
-- Modify `_get_silence_ms()` in `concatenator.py` to use `random.uniform(min, max)`
-- Add speaker change detection (compare `speaker` field of current vs previous segment)
-- Add punctuation-aware pauses (check last character of previous segment text)
-- Optional: accept a `seed` parameter for reproducible output
-
-**Dependency:** Independent. Can be implemented at any time. Works with current or new TTS engine.
-
----
-
-### Feature 8: Post-Processing Pipeline
-
-**Category:** Differentiator
-**Complexity:** MEDIUM
-**Priority:** P3
-
-**What it does:** Adds a professional mastering chain for ACX-grade output quality.
-
-**Segment-level processing (before concatenation):**
-
-| Step | Tool | Purpose |
-|------|------|---------|
-| Silence trim | pydub `detect_leading_silence` | Remove leading/trailing silence from each WAV |
-| Click removal | pydub fade (5-10ms) | Fade-in/fade-out at segment edges to eliminate concatenation pops |
-| Sample rate normalize | pydub `set_frame_rate` | Ensure all segments match (e.g., 24kHz mono) before concatenation |
-
-**Chapter-level processing (after concatenation, before MP3 export):**
-
-| Step | Tool | Purpose | Settings |
-|------|------|---------|----------|
-| High-pass filter | pedalboard `HighpassFilter` | Remove low-frequency rumble | 80Hz cutoff |
-| Light compression | pedalboard `Compressor` | Even out dynamics | 2:1 ratio, -20dB threshold |
-| LUFS normalization | pyloudnorm (existing) | Target loudness | -19.0 LUFS (keep current) |
-| Limiter | pedalboard `Limiter` | Prevent clipping | -3.1dB ceiling |
-| Export upgrade | pydub/ffmpeg | Better bitrate | 44.1kHz 192kbps CBR MP3 |
-
-**Processing order is critical:** High-pass -> Compression -> Normalization -> Limiting. This matches the professional audiobook mastering chain (EQ -> dynamics -> loudness -> ceiling).
-
-**ACX standard requirements (for reference quality target):**
-- Peak: no louder than -3dB
-- RMS: between -18dB and -23dB
-- Noise floor: below -60dB
-
-**Tool recommendation:** Spotify's `pedalboard` library -- 300x faster than pySoX, studio-quality effects, releases GIL for multi-core processing, battle-tested at Spotify scale. Already has Compressor, Limiter, HighpassFilter, LowpassFilter, Gain, and Reverb. Installs with `pip install pedalboard`.
-
-**Dependency:** Independent of TTS swap. Can be applied to existing Chatterbox output for immediate quality improvement.
-
----
-
-### Feature 9: Voice Consistency Pass
-
-**Category:** Differentiator (novel for local pipelines)
-**Complexity:** HIGH
-**Priority:** P3
-
-**What it does:** After synthesis, compare each segment's voice embedding against the reference clip embedding. Flag and regenerate segments where voice has drifted.
-
-**Expected behavior:**
-1. Extract speaker embedding from each character's reference clip (once per character)
-2. Extract speaker embedding from each synthesized WAV segment
-3. Compute cosine similarity between segment embedding and reference embedding
-4. Flag segments below threshold (e.g., cosine similarity < 0.75)
-5. Regenerate flagged segments (same text, same reference, different random seed)
-6. Re-check after regeneration; accept best attempt across all tries
-7. Maximum 3 regeneration attempts per segment to avoid infinite loops
-
-**Tool recommendation:** Resemblyzer (`pip install resemblyzer`). Produces 256-dim GE2E speaker embeddings. Lightweight, CPU-only (PyTorch-based but small model). Reliable for audio >= 2.6 seconds. Alternative: SpeechBrain ECAPA-TDNN (more accurate but heavier).
-
-**Key considerations:**
-- Minimum audio duration for reliable embedding: ~2.6 seconds
-- Skip consistency check for segments < 3 seconds (embedding unstable for short audio)
-- Cosine similarity threshold needs empirical tuning -- start at 0.75
-- Each character needs a reference embedding computed once from their reference clip
-- Regeneration uses a different random seed each attempt
-- Report: "X of Y segments flagged, Z regenerated successfully"
-
-**Memory note:** Resemblyzer's voice encoder is small (~17MB). Can coexist with Qwen3-TTS in 16GB memory.
-
-**Dependency:** Should run after feature 1 is stable. Voice consistency is different between Chatterbox and Qwen3-TTS, so tuning the threshold after the swap makes sense.
+| Anti-Feature | Why Tempting | Why Avoid | What to Do Instead |
+|--------------|-------------|-----------|-------------------|
+| Per-segment instruct parameter with cloned voice | Seems like the obvious way to add emotion | Base model does not support instruct with cloning. Period. No workaround except switching models. | Use text-semantic inference + text cue injection + post-processing |
+| Switching to CustomVoice model | Has instruct support for emotion | Only 9 preset voices. Loses the core value prop of distinct per-character voices from 2,443 LibriTTS-P speakers. | Stay on Base model with voice cloning |
+| Loading VoiceDesign + Base simultaneously | Could design voices on-the-fly during synthesis | 16GB memory budget. Two 1.7B models cannot coexist with any headroom. | Load VoiceDesign during voice prep phase (before synthesis), unload, then load Base for synthesis |
+| Real-time emotion re-synthesis | Re-generate segment if emotion analysis changes | 3000+ segments per book. Emotion changes are rare. Full re-synthesis is wasteful. | Checkpoint-aware selective regeneration for changed segments only |
+| SSML/markup-based prosody control | Industry standard for commercial TTS | Qwen3-TTS does not support SSML. MLX inference path has no SSML parser. | Text-semantic inference is Qwen3-TTS's approach to prosody |
+| Per-word emphasis marking | "Emphasize THIS word in the sentence" | No mechanism in Qwen3-TTS Base to control word-level emphasis. Would require fine-tuning. | Rely on text-semantic understanding. Qwen3-TTS handles emphasis from context (italics, caps, exclamation) |
+| Emotion interpolation between scenes | Smooth transition from "joyful" to "tense" across scene boundary | Over-engineering. Scene breaks already have pauses. Listeners expect mood shifts at scene boundaries. | Sharp scene mood transitions are natural in audiobooks |
 
 ---
 
 ## Feature Dependencies
 
 ```
-Feature 1: Qwen3-TTS Swap (FOUNDATION)
+Unified voice_profile (data model refactor)
     |
-    +-- Feature 2: Larger Chunks (trivial CHAR_LIMIT change once TTS swapped)
+    +-- Voice matching uses unified profile
+    |       (trait_matcher, embedding_matcher consume new fields)
     |
-    +-- Feature 3: Longer References (ref_text param is Qwen3-TTS specific)
+    +-- VoiceDesign-then-Clone pipeline (OPTIONAL, HIGH value)
+    |       Uses voice_profile.description to generate styled reference clip
+    |       Requires: loading VoiceDesign model during voice prep phase
+    |       Produces: style-baked reference clips per character
     |
-    +-- Feature 5: Emotion System (needs Qwen3-TTS semantic inference)
-    |       |
-    |       +-- requires Feature 6: LLM Dialogue Detection (speech-act tags)
-    |
-    +-- Feature 9: Voice Consistency Pass (embeddings + regeneration)
+    +-- Cached voice_clone_prompt
+            Pre-compute once per character, reuse for all segments
 
-Feature 4: LLM Upgrade (INDEPENDENT)
+Scene mood data flow to synthesizer
     |
-    +-- enhances Feature 6: LLM Dialogue Detection
-
-Feature 6: LLM Dialogue Detection
+    +-- Emotion-to-text-cue injection
+    |       Prepend mood context to segment text before TTS
     |
-    +-- feeds Feature 5: Emotion System (speech-act tags)
+    +-- Speech-act post-processing expansion
+            Extend volume/speed params with emotion-mapped values
 
-Feature 7: Randomized Pauses (INDEPENDENT)
-
-Feature 8: Post-Processing Pipeline (INDEPENDENT)
+Line override data flow to synthesizer
+    |
+    +-- Overrides replace scene mood for specific segments
+    |       Higher priority than scene mood in the cascade
+    |
+    +-- Same text-cue injection mechanism as scene mood
 ```
 
-### Dependency Notes
+### Critical Path
 
-- **Feature 1 is the critical path.** Features 2, 3, 5, 9 all depend on it directly. Must be validated first.
-- **Features 2 and 3 ship WITH feature 1** -- they are trivial changes once the TTS engine is swapped (constant change and clip selector update).
-- **Feature 4 is fully independent** -- can ship in any order. Even before the TTS swap.
-- **Features 7 and 8 are independent** -- can be applied to current Chatterbox output today.
-- **Feature 5 depends on both Feature 1 AND Feature 6** -- Layer 1 (text-semantic) comes free with Qwen3-TTS. Layers 2 and 3 need speech-act tags from LLM dialogue detection.
-- **Feature 9 should be last** -- it validates and fixes output from all other features. No point tuning consistency thresholds until TTS engine and emotion system are stable.
-
----
-
-## Implementation Priority Order
-
-### Phase A: Foundation (TTS Engine Swap)
-
-| Feature | Rationale |
-|---------|-----------|
-| 1. Qwen3-TTS Swap | Everything depends on this. Validate output quality, establish new baseline. |
-| 2. Larger Chunks | Ships with feature 1 -- just a constant change in segmenter.py. |
-| 3. Longer References | Ships with feature 1 -- clip selector update + ref_text support. |
-
-### Phase B: Intelligence (LLM Improvements)
-
-| Feature | Rationale |
-|---------|-----------|
-| 4. LLM Upgrade | Independent easy win. Better attribution accuracy. |
-| 6. LLM Dialogue Detection | Replaces regex. Adds speech-act tags. LLM already loaded for Phase 2. |
-| 5. Emotion System | Builds on Qwen3-TTS semantic inference + speech-act tags from feature 6. |
-
-### Phase C: Polish (Professional Quality)
-
-| Feature | Rationale |
-|---------|-----------|
-| 7. Randomized Pauses | Simple, high-impact naturalness improvement. |
-| 8. Post-Processing Pipeline | Mastering chain for ACX-grade output. |
-| 9. Voice Consistency Pass | Final quality gate. Detect and fix drift after everything else is stable. |
+1. **voice_profile unification** -- Pure refactor, no TTS changes, unblocks everything
+2. **Scene mood data flow** -- Pipe emotion data from attribution output to synthesizer
+3. **Text-cue injection** -- The primary mechanism for emotion to reach TTS
+4. **Line overrides** -- Uses same mechanism as scene mood, just higher priority
+5. **Post-processing expansion** -- Additive, low risk
+6. **VoiceDesign pipeline** (optional) -- Highest impact but highest complexity
+7. **Cached voice_clone_prompt** -- Performance optimization, do last
 
 ---
 
-## Feature Prioritization Matrix
+## Detailed Feature Analysis
 
-| Feature | User Value | Implementation Cost | Risk | Priority |
-|---------|------------|---------------------|------|----------|
-| 1. Qwen3-TTS Swap | HIGH | HIGH | MEDIUM (new engine, new API, new failure modes) | P1 |
-| 2. Larger Chunks | HIGH | LOW | LOW (constant change) | P1 |
-| 3. Longer References | MEDIUM | LOW | LOW (clip selection logic) | P1 |
-| 4. LLM Upgrade | MEDIUM | LOW | LOW (Ollama model swap) | P2 |
-| 5. Emotion System | HIGH | HIGH | HIGH (cloned voice + emotion gap) | P2 |
-| 6. LLM Dialogue Detection | MEDIUM | MEDIUM | LOW (established LLM pattern) | P2 |
-| 7. Randomized Pauses | MEDIUM | LOW | LOW (simple randomization) | P2 |
-| 8. Post-Processing | HIGH | MEDIUM | LOW (pedalboard is battle-tested) | P3 |
-| 9. Voice Consistency | MEDIUM | HIGH | MEDIUM (threshold tuning, regen loops) | P3 |
+### 1. Unified voice_profile
+
+**Complexity:** LOW
+**Risk:** LOW
+
+Merge `VoiceQualities` and `VoiceBaseline` into a single `VoiceProfile` model:
+
+```
+VoiceProfile:
+    pitch: str          (from VoiceQualities)
+    pace: str           (from VoiceQualities -- overlaps VoiceBaseline.pace)
+    tone: str           (from VoiceQualities -- overlaps VoiceBaseline.tone)
+    accent: str         (from VoiceQualities)
+    energy: str         (from VoiceBaseline)
+    typical_emotion: str (from VoiceBaseline)
+    description: str    (from VoiceBaseline -- key for VoiceDesign)
+```
+
+**Migration:** `CharacterProfile` gets `voice_profile: VoiceProfile` replacing both `voice_qualities` and `voice_baseline`. Backward compatibility via a migration function that reads old JSON and constructs the new model. LLM extraction prompt updated to produce unified schema.
+
+**Why table stakes:** The duplication is confusing (which `tone` do you use?), and the unified `description` field is needed downstream for both VoiceDesign and text-cue injection.
+
+### 2. Scene Mood + Line Override Conditioning via Text Cues
+
+**Complexity:** MEDIUM
+**Risk:** MEDIUM (effectiveness depends on how well Qwen3-TTS responds to prepended text cues)
+
+**Mechanism:** Qwen3-TTS's Base model infers prosody from text semantics. The text IS the prompt. So to influence style, modify the text that reaches the engine.
+
+**Approach -- text-cue injection:**
+
+For dialogue segments, prepend a brief natural-language cue derived from scene mood:
+- Input text: `"I can't believe you did that."`
+- Scene mood: anger, HIGH intensity
+- Injected text: `"Speaking with anger: I can't believe you did that."`
+
+For narration segments, the cue is more subtle:
+- Input text: `"The room fell silent."`
+- Scene mood: fear, MEDIUM intensity
+- Injected text: `"In a tense, fearful tone: The room fell silent."`
+
+**Line overrides supersede scene mood** -- if a segment has a LineOverride, use the override's emotion instead of the scene mood.
+
+**Key design decisions:**
+- Cue format matters. Short, natural-language cues work best. Avoid XML-like tags.
+- Cue should NOT appear in synthesized speech -- it primes the model's prosody but should not be verbalized. **This is the main risk.** If Qwen3-TTS speaks the cue text aloud, the feature is broken. Needs empirical testing with various cue formats.
+- Fallback: If cues are spoken aloud, try parenthetical format `(angrily)` or bracket format `[angry]` which some models treat as stage directions.
+- Nuclear fallback: If no cue format works silently, abandon text injection and rely solely on post-processing expansion (less expressive but reliable).
+
+**Emotion-to-cue mapping:**
+
+| EmotionCategory | Intensity LOW | Intensity MEDIUM | Intensity HIGH |
+|-----------------|---------------|------------------|----------------|
+| NEUTRAL | (no cue) | (no cue) | (no cue) |
+| JOY | "With a hint of warmth:" | "Happily:" | "With great joy and excitement:" |
+| SADNESS | "With a touch of melancholy:" | "Sadly:" | "With deep sorrow:" |
+| ANGER | "With slight irritation:" | "Angrily:" | "With intense fury:" |
+| FEAR | "With unease:" | "Fearfully:" | "In terror:" |
+| SURPRISE | "With mild surprise:" | "In surprise:" | "In complete shock:" |
+| DISGUST | "With distaste:" | "With disgust:" | "With revulsion:" |
+| TENDERNESS | "Gently:" | "Tenderly:" | "With deep tenderness:" |
+
+### 3. VoiceDesign-then-Clone Pipeline (Differentiator)
+
+**Complexity:** HIGH
+**Risk:** MEDIUM (proven workflow per official docs, but untested in this codebase)
+
+**Confidence: MEDIUM** -- The workflow is officially documented by Qwen and verified by community guides. Memory feasibility on 16GB M4 is HIGH confidence (1.7B model fits in ~4GB via MLX bf16).
+
+**Workflow:**
+1. During voice prep phase (before synthesis), load VoiceDesign model
+2. For each character, use `voice_profile.description` as the `instruct` parameter
+3. Generate a 10-15s reference clip with styled voice matching the character description
+4. Unload VoiceDesign model
+5. Load Base model for synthesis
+6. Clone from the VoiceDesign-generated reference clip (which now carries the character's style)
+
+**Trade-off:** This replaces LibriTTS-P reference clips with VoiceDesign-generated clips. The cloned voice will sound like the VoiceDesign output, not like a real human from LibriTTS-P. This may reduce voice naturalness (real human recordings are typically more natural than synthesized references). But it gains style consistency -- every character sounds like their description says they should.
+
+**Alternative hybrid approach:** Use LibriTTS-P clips for timbre (real human voice quality) and rely on text-cue injection for emotion. This preserves voice naturalness at the cost of less style control. **Recommend starting with text-cue injection (feature 2) and adding VoiceDesign pipeline only if text cues prove insufficient.**
+
+### 4. Speech-Act Post-Processing Expansion
+
+**Complexity:** LOW
+**Risk:** LOW
+
+Extend `SPEECH_ACT_PARAMS` to include emotion-mapped parameters. The existing pattern (volume_db + speed_factor per speech act) is proven. Add emotion-based adjustments that stack with speech-act adjustments:
+
+| EmotionCategory | volume_db | speed_factor | Notes |
+|-----------------|-----------|--------------|-------|
+| NEUTRAL | 0.0 | 1.0 | No change |
+| JOY | +1.0 | 1.03 | Slightly brighter, slightly faster |
+| SADNESS | -1.5 | 0.95 | Slightly quieter, slightly slower |
+| ANGER | +2.0 | 1.05 | Louder, faster |
+| FEAR | -1.0 | 1.02 | Slightly quieter, slightly faster (breathless) |
+| SURPRISE | +1.5 | 1.0 | Louder, same pace |
+| DISGUST | 0.0 | 0.97 | Same volume, slightly slower |
+| TENDERNESS | -2.0 | 0.95 | Quieter, slower |
+
+**Intensity scaling:** LOW = 50% of values, MEDIUM = 100%, HIGH = 150%. Clamp to safe ranges.
+
+**Stacking with speech acts:** Emotion adjustments apply first, speech-act adjustments apply second. A "shouted with anger" line gets anger boost (+2.0 dB, 1.05x speed) then shout boost (+4.5 dB, 1.08x speed) = +6.5 dB total, 1.13x speed. Clamp to prevent distortion.
+
+### 5. Cached voice_clone_prompt
+
+**Complexity:** LOW
+**Risk:** LOW
+
+Use mlx-audio's `create_voice_clone_prompt()` to pre-compute the voice embedding + prompt tokens once per character, then pass `voice_clone_prompt` to `generate_voice_clone()` for each segment. Currently the engine re-processes the reference audio for every single segment.
+
+**Expected improvement:**
+- Faster synthesis (skip ref audio processing per segment)
+- More consistent voice (same prompt tokens every time)
+- Lower memory churn (no repeated audio loading)
+
+Store cached prompts in memory during the synthesis run (not to disk -- they are model-version-specific).
 
 ---
 
-## Competitor Feature Analysis (v1.1 Features)
+## MVP Recommendation
 
-| Feature | tts-audiobook-tool | Qwen3-Audiobook-Converter | ElevenLabs | Our v1.1 Approach |
-|---------|-------------------|--------------------------|------------|-------------------|
-| TTS engine | 9 models (Qwen3, Chatterbox, etc) | Qwen3 (API or local) | Proprietary V3 | Qwen3-TTS 1.7B Base via MLX |
-| Multi-voice | Yes (manual assignment) | No (single voice) | Yes (API, manual) | Yes (LLM-attributed, automated) |
-| Voice cloning | Yes (per-model) | Yes (Qwen3 Base) | Yes (API) | Yes (LibriTTS-P + Qwen3 Base) |
-| Emotion control | No explicit | No explicit | 50+ style/emotion tags | Text-semantic (auto) + speech-act mapping |
-| Dialogue detection | No (manual) | No (sequential text) | No (manual) | LLM-based with speech-act tagging |
-| Voice consistency | Whisper STT error detection | No | Proprietary | Embedding-based drift detection + regen |
-| Post-processing | Loudness normalization | Basic concat | Proprietary mastering | Full chain (EQ, compression, limiting) |
-| Pause control | Semantic-aware caesuras | No control | SSML break tags | Randomized context-aware ranges |
-| Chunking | Paragraph/sentence-aware | 1200-word default | Automatic | Sentence-boundary-aware, 500-600 chars |
-| Fully local | Yes | Partial (API option) | No (cloud only) | Yes |
+Prioritize in this order:
 
-**Our differentiators vs open-source competitors:**
-- LLM-based dialogue detection with speech-act tagging (no competitor does this)
-- Embedding-based voice consistency verification with regeneration (tts-audiobook-tool uses Whisper for text accuracy, not voice similarity)
-- Full professional mastering chain (most competitors only normalize loudness)
-- Integrated multi-voice pipeline with automated LLM attribution (most are single-voice or require manual assignment)
+1. **Unified voice_profile** -- Pure refactor, unblocks everything, zero risk to synthesis quality
+2. **Voice matching uses unified profile** -- Small change in trait_matcher and embedding_matcher
+3. **Scene mood data flow to synthesizer** -- Pipe the data, even if conditioning mechanism is a no-op initially
+4. **Text-cue injection for emotion** -- The primary mechanism. Must be empirically tested. Include a feature flag to disable if cues are spoken aloud.
+5. **Line override conditioning** -- Same mechanism as scene mood, higher priority in cascade
+
+**Defer:**
+- **VoiceDesign pipeline:** High complexity, unclear value vs text-cue injection. Evaluate after text cues are tested.
+- **Cached voice_clone_prompt:** Performance optimization. Do after functional features work.
+- **Post-processing expansion:** Additive and low risk. Can be done anytime.
 
 ---
 
 ## Sources
 
-- [Qwen3-TTS Official Repository](https://github.com/QwenLM/Qwen3-TTS) -- model variants, API, capabilities (HIGH confidence)
-- [Qwen3-TTS Technical Report](https://arxiv.org/html/2601.15621v1) -- architecture, benchmarks, 32K token context (HIGH confidence)
-- [mlx-audio Qwen3-TTS README](https://github.com/Blaizzy/mlx-audio/blob/main/mlx_audio/tts/models/qwen3_tts/README.md) -- MLX API, batch generation, Apple Silicon (HIGH confidence)
-- [Qwen3-TTS CustomVoice HuggingFace](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice) -- emotion instruction format, 9 preset speakers (HIGH confidence)
-- [Emotion in Cloned Voices Discussion #231](https://github.com/QwenLM/Qwen3-TTS/discussions/231) -- Base model ignores instruct param (HIGH confidence)
-- [Inline Emotion Tags Discussion #238](https://github.com/QwenLM/Qwen3-TTS/discussions/238) -- per-line emotion control is a feature request, not a capability (HIGH confidence)
-- [Qwen3-Audiobook-Converter](https://github.com/WhiskeyCoder/Qwen3-Audiobook-Converter) -- 1200-word chunk default, voice cloning chunking (MEDIUM confidence)
-- [tts-audiobook-tool](https://github.com/zeropointnine/tts-audiobook-tool) -- competitor features, Whisper validation, semantic pauses (MEDIUM confidence)
-- [mlx-audio on macOS Blog](https://mybyways.com/blog/qwen3-tts-with-mlx-audio-on-macos) -- API usage patterns, ~1000 chars/min, memory notes (MEDIUM confidence)
-- [Qwen3-TTS Voice Cloning Guide](https://ocdevel.com/blog/20260302-qwen-tts-voice-cloning) -- 10-15s optimal reference, >30s causes hangs (MEDIUM confidence)
-- [Spotify Pedalboard](https://github.com/spotify/pedalboard) -- Compressor, Limiter, HighpassFilter, 300x faster than pySoX (HIGH confidence)
-- [Resemblyzer](https://github.com/resemble-ai/Resemblyzer) -- 256-dim GE2E speaker embeddings, cosine similarity (HIGH confidence)
-- [ACX Audio Specs 2025-2026](https://narrationbox.com/blog/acx-audio-specs-explained-2025-2026) -- peak -3dB, RMS -18 to -23dB, noise -60dB (HIGH confidence)
-- [Audacity Audiobook Mastering](https://support.audacityteam.org/audio-editing/audiobook-mastering) -- EQ -> Compression -> Limiting order (MEDIUM confidence)
-- [Resemblyzer Effectiveness Study 2025](https://periodicals.karazin.ua/mia/article/view/28479) -- minimum 2.63s for reliable embeddings (MEDIUM confidence)
-- [Qwen3-TTS Complete Guide (DEV Community)](https://dev.to/czmilo/qwen3-tts-the-complete-2026-guide-to-open-source-voice-cloning-and-ai-speech-generation-1in6) -- ecosystem overview, 10-15s reference sweet spot (MEDIUM confidence)
+- [Qwen3-TTS Official Repository](https://github.com/QwenLM/Qwen3-TTS) -- model variants, API, Base vs CustomVoice vs VoiceDesign (HIGH confidence)
+- [Qwen3-TTS-12Hz-1.7B-Base HuggingFace](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-Base) -- Base model API, no instruct support confirmed (HIGH confidence)
+- [Qwen3-TTS-12Hz-1.7B-CustomVoice HuggingFace](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice) -- CustomVoice API with instruct, 9 preset speakers only (HIGH confidence)
+- [mlx-audio Qwen3-TTS README](https://github.com/Blaizzy/mlx-audio/blob/main/mlx_audio/tts/models/qwen3_tts/README.md) -- MLX API for all model variants (HIGH confidence)
+- [mlx-community VoiceDesign bf16](https://huggingface.co/mlx-community/Qwen3-TTS-12Hz-1.7B-VoiceDesign-bf16) -- MLX-converted VoiceDesign model available (HIGH confidence)
+- [Qwen3-TTS Voice Cloning Guide 2026](https://ocdevel.com/blog/20260302-qwen-tts-voice-cloning) -- VoiceDesign-then-Clone workflow, accent instability warning (MEDIUM confidence)
+- [Qwen3-TTS Complete Guide (DEV Community)](https://dev.to/czmilo/qwen3-tts-the-complete-2026-guide-to-open-source-voice-cloning-and-ai-speech-generation-1in6) -- ecosystem overview, model comparison (MEDIUM confidence)
+- [Enhanced Prosody Modeling for Audiobook Synthesis (ACM 2025)](https://dl.acm.org/doi/10.1145/3749644) -- hierarchical prosody control patterns (MEDIUM confidence)
+- [Controlling Emotion in TTS with Natural Language Prompts (Interspeech 2024)](https://arxiv.org/html/2406.06406v1) -- text-based emotion conditioning approaches (MEDIUM confidence)
+- [Controllable Speech Synthesis Survey (2024)](https://arxiv.org/html/2412.06602v1) -- multi-scale prosody control taxonomy (MEDIUM confidence)
+- [Qwen Blog: Qwen3-TTS Family](https://qwen.ai/blog?id=qwen3tts-0115) -- official capabilities description, text-semantic understanding (HIGH confidence)
 
 ---
-*Feature research for: v1.1 pipeline quality improvements*
-*Researched: 2026-03-04*
+*Feature research for: v1.2 voice expression milestone*
+*Researched: 2026-03-06*

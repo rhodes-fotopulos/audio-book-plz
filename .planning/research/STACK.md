@@ -1,333 +1,146 @@
-# Technology Stack: v1.1 Audiobook Pipeline Improvements
+# Technology Stack: v1.2 Voice Expression
 
-**Project:** audio-book-plz v1.1
-**Researched:** 2026-03-04
-**Scope:** Stack ADDITIONS and CHANGES for 9 new features. Does NOT re-document existing v1.0 stack.
-**Overall Confidence:** MEDIUM — Qwen3-TTS via MLX is new (Jan 2026), mlx-audio has active bugs; audio post-processing libraries are mature and well-verified.
+**Project:** audio-book-plz v1.2
+**Researched:** 2026-03-06
+**Scope:** Stack additions/changes for voice expression features: style conditioning, emotion-to-prosody mapping, unified voice profiles.
+**Overall Confidence:** MEDIUM -- The central question (combining voice cloning + style control in Qwen3-TTS) has a confirmed architectural limitation that shapes the entire approach.
 
 ---
 
-## Existing Stack (Unchanged)
+## Critical Finding: Voice Cloning vs Style Control Are Separate Models
 
-These remain from v1.0 — no changes needed:
+**Confidence: HIGH** (verified via Qwen3-TTS technical report, official HuggingFace model cards, GitHub discussion #231)
+
+Qwen3-TTS has three model variants with mutually exclusive capabilities:
+
+| Model | Voice Cloning (`ref_audio`) | Style Instructions (`instruct`) | Voice Source |
+|-------|:---------------------------:|:-------------------------------:|-------------|
+| **Base** (current) | YES | NO | Any audio reference |
+| **CustomVoice** | NO | YES | 9 preset speakers only |
+| **VoiceDesign** | NO | YES (voice creation) | Text description only |
+
+**No single Qwen3-TTS model supports both voice cloning from LibriTTS-R AND emotion/style instructions simultaneously.** The v1.1 STACK.md incorrectly showed `ref_audio` being passed to `generate_custom_voice()` -- this does not work. The Base model ignores `instruct` parameters entirely (confirmed via GitHub discussion #231 and HuggingFace discussion #38).
+
+**The upcoming `Qwen3-TTS-25Hz-1.7B-VoiceEditing` model may solve this**, but it has not been released as of 2026-03-06.
+
+### Implication for v1.2
+
+Since the project clones voices from LibriTTS-R (the core value proposition), we MUST stay on the Base model. This means **style/emotion control cannot happen at the TTS model level** and must be achieved through other means.
+
+---
+
+## Existing Stack (Unchanged for v1.2)
+
+Everything from v1.0/v1.1 remains. No new pip packages are needed.
 
 | Technology | Version | Status |
 |------------|---------|--------|
-| Python | 3.11 | Keep (`>=3.11,<3.12`). MLX and mlx-audio require `>=3.10`, fully compatible. |
-| EbookLib | 0.20 | Keep |
-| beautifulsoup4 | 4.14.3 | Keep |
-| lxml | 5.0+ | Keep |
-| nltk | 3.8+ | Keep |
-| typer | 0.24+ | Keep |
-| rich | 13.0+ | Keep |
-| ollama (client) | 0.6+ | Keep |
-| pydantic | 2.0+ | Keep |
-| sentence-transformers | 3.0+ | Keep |
-| pydub | 0.25.1 | Keep — gains new crossfade usage |
-| pyloudnorm | 0.2.0 | Keep — already a dependency |
-| mutagen | 1.47.0 | Keep |
-| ffmpeg | system | Keep |
+| Python | 3.11 | Keep |
+| mlx-audio | >=0.3.1 | Keep -- Qwen3-TTS 1.7B Base via MLX |
+| mlx | >=0.30.3 | Keep |
+| pedalboard | >=0.9.22 | Keep -- gains new emotion-aware parameterization |
+| Resemblyzer | >=0.1.3 | Keep |
+| pydub | >=0.25.1 | Keep |
+| Pydantic | >=2.0 | Keep -- used for voice profile data models |
+| Ollama + Qwen3 14B/8B | existing | Keep |
+| All other v1.1 deps | existing | Keep |
 
 ---
 
-## Stack REMOVALS
+## Stack ADDITIONS: None Required
 
-### Remove: chatterbox-tts
+**The v1.2 voice expression features require ZERO new pip packages.** Everything needed is already in the project. This section explains what existing tools cover each need.
 
-| Package | Action | Reason |
-|---------|--------|--------|
-| `chatterbox-tts` | **REMOVE** | Replaced by Qwen3-TTS via mlx-audio. Chatterbox requires PyTorch+MPS (~4GB VRAM), has a known memory leak requiring periodic cleanup, limited to ~280 char chunks, and lacks native emotion control. Qwen3-TTS via MLX uses Apple's unified memory more efficiently with no memory leak pattern, supports 500+ char chunks, and has built-in emotion/style instruction via natural language. |
-| `torch` / `torchaudio` | **REMOVE from core deps** | No longer needed for TTS. MLX replaces PyTorch for inference. PyTorch remains as a transitive dependency of `sentence-transformers` but is no longer directly imported for TTS. This frees ~2GB of VRAM that PyTorch was reserving for MPS. |
+### 1. Voice Style Descriptions -> TTS: Text Prompt Engineering (No New Deps)
 
-**Migration note:** The `TTSEngine` class in `src/synthesis/tts_engine.py` must be rewritten. The current implementation wraps `ChatterboxTTS.from_pretrained()` with MPS migration — the new implementation will use `mlx_audio.tts.utils.load_model()` instead.
+Since the Base model's `generate()` does not accept an `instruct` parameter, the primary mechanism for influencing prosody is **text manipulation** -- prepending or embedding style cues in the synthesized text itself.
 
----
+**Approach: Contextual text conditioning via the input text**
 
-## Stack ADDITIONS
+The Base model has strong contextual understanding and adapts prosody based on text semantics. While it cannot follow explicit style instructions, it DOES respond to:
 
-### 1. TTS Engine: mlx-audio (Qwen3-TTS)
+1. **Text content itself** -- exclamation marks, question marks, ellipses, and emotional word choice naturally affect prosody
+2. **Surrounding context** -- the model reads the full text chunk and adapts tone
+3. **Speech-act annotations** -- already implemented in v1.1 via `post_processor.py`
 
-| Technology | Version | Purpose | Why |
-|------------|---------|---------|-----|
-| `mlx` | >=0.31.0 | Apple Silicon ML framework | Apple's native array framework for M-series chips. Uses unified memory architecture (no CPU-to-GPU copy overhead). Supports Python 3.10-3.14, macOS 14+. Actively maintained by Apple ML Research. **HIGH confidence** — verified via PyPI (0.31.0 released 2026-02-27). |
-| `mlx-audio[tts]` | >=0.3.1 | TTS inference wrapper for Qwen3-TTS | Provides `load_model()` and `generate_audio()` / `generate_custom_voice()` APIs for Qwen3-TTS models. Built on MLX framework. Requires ffmpeg for non-WAV output. **MEDIUM confidence** — v0.3.1 has known issues with audio dropout on long text (GitHub Issue #464) and chunking bugs on non-Base models. |
+**What this means practically:**
+- The LLM (Qwen3 14B) generates emotion annotations (already built in v1.1)
+- These annotations drive **post-processing parameters** (volume, speed, pitch-shift), NOT TTS model instructions
+- The three-layer system (voice baseline + scene mood + line override) maps to post-processing parameter tables, not TTS API calls
 
-**Model selection:**
+**No new library needed.** The existing `post_processor.py` (speech-act adjustments via numpy) is the correct integration point.
 
-| Model | HuggingFace ID | Storage | Memory | Features | Recommendation |
-|-------|---------------|---------|--------|----------|----------------|
-| 1.7B CustomVoice 8-bit | `mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit` | 0.8 GB | ~3 GB | Voice cloning + emotion control via `instruct` param | **PRIMARY** — Use for all TTS. Supports both voice cloning from reference audio AND emotion/style instructions. 8-bit quantization fits comfortably in 16GB alongside Ollama teardown. |
-| 1.7B Base bf16 | `mlx-community/Qwen3-TTS-12Hz-1.7B-Base-bf16` | 2 GB | ~4 GB | Voice cloning only, best chunk handling | FALLBACK — Only if CustomVoice emotion control proves unreliable. Base model has more robust text chunking (`split_pattern` works correctly). No 8-bit quant available yet; bf16 uses more memory. |
-| 0.6B CustomVoice 8-bit | `mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit` | 0.5 GB | ~1.5 GB | Voice cloning + emotion (weaker) | EMERGENCY FALLBACK — Use only if 16GB memory is too tight for 1.7B + post-processing. Emotion control is noticeably weaker than 1.7B. |
+### 2. Emotion-to-Prosody Mapping: Extended Post-Processing (No New Deps)
 
-**Critical: Memory budget on 16GB M4 Mac:**
+The current `post_processor.py` handles 4 speech acts (spoken, whispered, shouted, thought) with volume_db and speed_factor adjustments. v1.2 extends this to also consider the 8-category emotion taxonomy from `EmotionCategory`.
 
-```
-Qwen3-TTS 1.7B 8-bit:  ~3 GB
-Post-processing (numpy): ~0.5 GB
-Python + OS overhead:    ~3 GB
-                         --------
-Total during TTS phase:  ~6.5 GB (comfortable)
-
-Ollama qwen3:8b Q4_K_M:  ~5 GB
-Python + OS overhead:     ~3 GB
-                          --------
-Total during LLM phase:   ~8 GB (comfortable)
-```
-
-Sequential phase architecture remains correct — never run TTS and LLM simultaneously.
-
-**Voice cloning with Qwen3-TTS:**
-- Optimal reference audio: **10-15 seconds** of clean speech (quality scales linearly from 3s to 15s, then plateaus)
-- Reference audio MUST include a text transcript for best quality
-- Supports `ref_audio_max_seconds=30` as a safety trim
-- The `generate_custom_voice()` method accepts an `instruct` parameter for natural language emotion/style control (e.g., "Speak in a deep, gravelly voice with quiet menace")
-
-**API pattern (replaces Chatterbox API):**
+**Implementation: Expand `SPEECH_ACT_PARAMS` into a 2D mapping**
 
 ```python
-from mlx_audio.tts.utils import load_model
+# Existing (v1.1) -- speech act only
+SPEECH_ACT_PARAMS = {
+    "spoken":    {"volume_db": 0.0,  "speed_factor": 1.0},
+    "whispered": {"volume_db": -4.5, "speed_factor": 1.0},
+    "shouted":   {"volume_db": 4.5,  "speed_factor": 1.08},
+    "thought":   {"volume_db": -3.0, "speed_factor": 0.93},
+}
 
-# Load once per session
-model = load_model("mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit")
-
-# Generate with voice cloning + emotion
-results = list(model.generate_custom_voice(
-    text="The door creaked open slowly.",
-    speaker="Ryan",            # Predefined base speaker
-    language="English",
-    instruct="Tense and fearful, speaking in a hushed whisper.",
-    ref_audio="path/to/reference.wav",  # Voice clone source
-    ref_text="Transcript of the reference audio.",
-))
-audio = results[0].audio  # mlx array, not torch tensor
+# New (v1.2) -- emotion layer adds deltas on TOP of speech act
+EMOTION_DELTAS = {
+    "neutral":    {"volume_db": 0.0,  "speed_factor": 1.0,  "pitch_semitones": 0.0},
+    "joy":        {"volume_db": 1.5,  "speed_factor": 1.05, "pitch_semitones": 0.5},
+    "sadness":    {"volume_db": -2.0, "speed_factor": 0.92, "pitch_semitones": -0.3},
+    "anger":      {"volume_db": 3.0,  "speed_factor": 1.10, "pitch_semitones": 0.0},
+    "fear":       {"volume_db": -1.0, "speed_factor": 1.08, "pitch_semitones": 0.3},
+    "surprise":   {"volume_db": 2.0,  "speed_factor": 1.12, "pitch_semitones": 0.5},
+    "disgust":    {"volume_db": 0.5,  "speed_factor": 0.95, "pitch_semitones": -0.2},
+    "tenderness": {"volume_db": -1.5, "speed_factor": 0.90, "pitch_semitones": 0.0},
+}
 ```
 
-**Known issues (MEDIUM confidence — from GitHub issues, Jan-Feb 2026):**
-1. Audio dropout in middle of long generations (Issue #464) — mitigate by keeping chunks under 600 chars
-2. `split_pattern` ignored for CustomVoice/VoiceDesign models — may need manual chunking
-3. Voice accent can shift after streaming changes (Issue #439) — pin to v0.3.1, test before upgrading
-4. Performance: ~1000 chars/minute on M2; M4 should be faster but no published benchmarks yet
+**Pitch shifting** uses pedalboard's existing capabilities or numpy-based resampling (already in `post_processor.py` for speed adjustment). No new dependency.
 
-### 2. Audio Post-Processing: pedalboard
+**Three-layer composition order:**
+1. Start with speech-act base params (whispered/shouted/thought/spoken)
+2. Apply emotion delta from scene mood (additive)
+3. Apply emotion delta from line override if present (replaces scene mood delta)
+4. Clamp all values to safe ranges
 
-| Technology | Version | Purpose | Why |
-|------------|---------|---------|-----|
-| `pedalboard` | >=0.9.22 | Professional audio effects chain | Spotify's C++/JUCE-backed Python audio library. Provides Compressor, NoiseGate, HighpassFilter, LowpassFilter, Gain, Limiter as native C++ implementations (100-1000x faster than pure Python). Tested on Python 3.10-3.14, Apple Silicon ARM64 wheels available. **HIGH confidence** — verified via PyPI, released 2026-02-02. |
+**Libraries used:** numpy (existing), pedalboard (existing for pitch if needed).
 
-**Why pedalboard over alternatives:**
-- **vs scipy.signal:** pedalboard provides studio-quality effects as one-liners. scipy requires manually designing filter coefficients, windowing, and chaining — verbose and error-prone for audio effects.
-- **vs noisereduce:** noisereduce is spectral gating (good for background noise), NOT de-clicking. Pedalboard's NoiseGate handles transient clicks better. noisereduce is still useful as a supplement if needed.
-- **vs pydub effects:** pydub's compressor and EQ are primitive (dBFS-based). Pedalboard uses JUCE's professional-grade implementations.
-- **vs ffmpeg filters:** ffmpeg can do this via subprocess but is hard to debug, has no Python-native API, and error handling is poor.
+### 3. Unified Voice Profile Data Model: Pydantic Refactor (No New Deps)
 
-**License warning: pedalboard is GPLv3.** This project is a local personal tool, not distributed as a library, so GPLv3 does not impose meaningful constraints. If distribution becomes a goal, the GPLv3 copyleft would require open-sourcing. This is acceptable for the current use case.
+The current codebase has two overlapping voice description fields:
+- `VoiceQualities` (pitch, pace, tone, accent) -- used by voice matching
+- `VoiceBaseline` (pace, tone, energy, typical_emotion, description) -- used by emotion system
 
-**Post-processing pipeline (maps to Feature #8):**
+v1.2 merges these into a single `VoiceProfile` model. This is a Pydantic model refactor, not a library change.
 
 ```python
-import pedalboard
-from pedalboard import (
-    Compressor, Gain, HighpassFilter, LowpassFilter,
-    Limiter, NoiseGate,
-)
+class VoiceProfile(BaseModel):
+    """Unified voice description replacing VoiceQualities + VoiceBaseline.
 
-board = pedalboard.Pedalboard([
-    # 1. Trim silence — use pydub.silence.detect_leading_silence() (already have pydub)
-    # 2. De-click — NoiseGate removes low-level transient artifacts
-    NoiseGate(threshold_db=-40, ratio=2.0, release_ms=50),
-    # 3. High-pass filter — remove rumble below 80Hz
-    HighpassFilter(cutoff_frequency_hz=80),
-    # 4. Low-pass filter — remove harsh frequencies above 12kHz
-    LowpassFilter(cutoff_frequency_hz=12000),
-    # 5. Compress — even out volume; audiobook standard
-    Compressor(threshold_db=-20, ratio=3.0, attack_ms=10, release_ms=100),
-    # 6. Limiter — hard ceiling to prevent clipping
-    Limiter(threshold_db=-1.0, release_ms=100),
-    # 7. Gain — adjust overall level
-    Gain(gain_db=0),  # Adjusted after LUFS measurement
-])
-
-# Apply to audio (numpy array)
-processed = board(audio_array, sample_rate=24000)
+    Used by:
+    - Voice matching (trait_matcher, embedding_matcher)
+    - Emotion system (character baseline layer)
+    - Post-processing (per-character parameter offsets)
+    """
+    pitch: str           # "high", "medium", "low", "unknown"
+    pace: str            # "fast", "moderate", "slow" / "measured", "rapid", etc.
+    tone: str            # "warm", "gruff", "silky", "gravelly", etc.
+    accent: str          # "British", "Southern American", "unknown"
+    energy: str          # "restrained", "animated", "intense", "subdued"
+    typical_emotion: str # "sardonic", "cheerful", "weary"
+    description: str     # "A slow, gravelly voice with weary patience"
 ```
 
-**Integration with existing normalizer.py:** The existing `assembly/normalizer.py` uses pyloudnorm for LUFS measurement and normalization. The new post-processing pipeline runs BEFORE LUFS normalization. Order: raw TTS output -> pedalboard chain -> pyloudnorm LUFS normalize -> crossfade assembly.
+**Library used:** Pydantic (existing). No migration tool needed -- the merge is manual field consolidation.
 
-### 3. Speaker Embedding for Voice Consistency: Resemblyzer
+### 4. Voice Profile -> Voice Matching Enhancement (No New Deps)
 
-| Technology | Version | Purpose | Why |
-|------------|---------|---------|-----|
-| `resemblyzer` | >=0.1.3 | Speaker embedding extraction for voice drift detection | Produces 256-dimensional speaker embeddings from audio. Lightweight (~17MB model), runs on CPU, ~1000x realtime on CPU. Use to compare each synthesized segment's embedding against the character's reference embedding — flag drift above a cosine similarity threshold. **MEDIUM confidence** — library is functionally stable but maintenance is inactive (no new PyPI releases in 12+ months). |
+The unified `VoiceProfile.description` field (e.g., "A slow, gravelly voice with weary patience") can be embedded via the existing `sentence-transformers` and compared against LibriTTS-P speaker `trait_text` embeddings in `embedding_matcher.py`.
 
-**Why Resemblyzer over SpeechBrain:**
-- **SpeechBrain** (ECAPA-TDNN, 192-dim) is a better model (0.69% EER vs Resemblyzer's ~5% EER on VoxCeleb) but pulls in the full SpeechBrain toolkit (864KB package + hundreds of MB in PyTorch dependencies, many sub-packages). It is designed for research pipelines, not lightweight embedding extraction.
-- **Resemblyzer** is a single-purpose library: load encoder, embed audio, get 256-dim vector. It uses PyTorch internally (which sentence-transformers already provides as a transitive dep), so no new heavy deps.
-- For our use case (detecting if a TTS output drifted from its reference voice), Resemblyzer's accuracy is MORE than sufficient. We are comparing the same voice model's outputs against its own reference — not doing speaker verification across real-world speakers.
-
-**Why NOT sentence-transformers for this:** sentence-transformers embeds TEXT, not audio. Voice consistency requires comparing AUDIO waveforms. Resemblyzer embeds audio signals directly.
-
-**Voice consistency check pattern (maps to Feature #9):**
-
-```python
-from resemblyzer import VoiceEncoder, preprocess_wav
-from pathlib import Path
-import numpy as np
-
-encoder = VoiceEncoder("cpu")
-
-# Compute reference embedding once per character
-ref_wav = preprocess_wav(Path("ref_clips/character_01.wav"))
-ref_embedding = encoder.embed_utterance(ref_wav)
-
-# After each TTS segment, check consistency
-segment_wav = preprocess_wav(Path("output/seg_0042.wav"))
-seg_embedding = encoder.embed_utterance(segment_wav)
-
-similarity = np.dot(ref_embedding, seg_embedding)
-if similarity < 0.80:  # Threshold — tune empirically
-    # Flag for re-synthesis or manual review
-    print(f"Voice drift detected: similarity={similarity:.3f}")
-```
-
-### 4. Ollama Model Upgrade
-
-No new Python packages needed — this is an Ollama model swap.
-
-| Model | Ollama Tag | Size | Memory | Purpose | Recommendation |
-|-------|-----------|------|--------|---------|----------------|
-| Qwen3 8B Q4_K_M | `qwen3:8b` (default) | 4.9 GB | ~5 GB | Current LLM for attribution | **KEEP as baseline** |
-| Qwen3 8B Q8_0 | `qwen3:8b-q8_0` | 8.5 GB | ~9 GB | Higher quality attribution | **DO NOT USE** — 9GB VRAM + 3GB OS overhead = 12GB, leaving only 4GB for system. Too tight on 16GB. |
-| Qwen3 14B Q4_K_M | `qwen3:14b-q4_K_M` | 9 GB | ~10 GB | Better reasoning for complex scenes | **RECOMMENDED UPGRADE** — 10GB fits in 16GB during LLM phase (TTS unloaded). Significantly better at nuanced emotion detection and dialogue attribution than 8B. Use `OLLAMA_KV_CACHE_TYPE=q8_0` to save ~1-2GB on context window. |
-
-**Memory optimization for 14B on 16GB:**
-
-```bash
-# Set before running Ollama
-export OLLAMA_KV_CACHE_TYPE=q8_0       # Halves KV cache memory (~2GB savings)
-export OLLAMA_FLASH_ATTENTION=1         # Faster attention, slightly less memory
-export OLLAMA_KEEP_ALIVE=0              # Unload immediately after use (frees memory for TTS)
-```
-
-**Migration:** Change `model` parameter in `src/attribution/llm_client.py` from `qwen3:8b` to `qwen3:14b-q4_K_M`. The Ollama API is identical — no code changes beyond the model name string.
-
----
-
-## Stack Additions That Are NOT New Packages
-
-These features use libraries already in the project:
-
-### Larger TTS Chunks (Feature #2)
-
-No new deps. Increase chunk target from ~280 chars to 500-600 chars in the text segmentation logic. Qwen3-TTS handles longer sequences than Chatterbox. Existing `pysbd` sentence boundary detection is reused; just change the join-until-limit threshold.
-
-### Longer Voice References (Feature #3)
-
-No new deps. LibriTTS-R clips are longer and higher quality than LibriTTS-P. Change the clip selection logic in `src/matching/clip_selector.py` to prefer 10-15 second clips (currently selects shorter clips for Chatterbox). LibriTTS-R data is a download, not a pip package.
-
-**LibriTTS-R vs LibriTTS-P:**
-- LibriTTS-P: 2,443 speakers, personality annotations, variable audio quality
-- LibriTTS-R: 2,456 speakers, restored audio quality (Miipher speech restoration), 585 hours at 24kHz
-- Use LibriTTS-R for AUDIO (higher quality references) and LibriTTS-P for ANNOTATIONS (personality traits)
-- Both datasets use compatible speaker IDs
-
-### Three-Layer Emotion System (Feature #5)
-
-No new deps. Implemented in the attribution LLM prompts and passed through to Qwen3-TTS's `instruct` parameter. The three layers (character baseline + scene mood + line overrides) are composed into a single natural language instruction string:
-
-```python
-instruct = f"{character_baseline}. {scene_mood}. {line_override}."
-# Example: "Deep gravelly voice, speaks slowly. Tense and dark scene. Shouting angrily."
-```
-
-### LLM-Based Dialogue Detection (Feature #6)
-
-No new deps. Replaces regex-based dialogue detection with LLM prompting via existing Ollama client. Include dialogue/narration classification in the attribution prompt rather than as a separate call.
-
-### Randomized Pause Timing (Feature #7)
-
-No new deps. Use Python `random` stdlib + existing pydub `AudioSegment.silent()` to generate variable-length silence segments between speech segments. Ranges: sentence boundary (200-400ms), paragraph (400-800ms), chapter (1000-2000ms).
-
-### Crossfade Assembly (part of Feature #8)
-
-No new deps. Use existing pydub's `segment1.append(segment2, crossfade=50)` for 50ms crossfades between segments within a chapter. Already in pydub API.
-
-### Silence Trimming (part of Feature #8)
-
-No new deps. Use existing pydub's `detect_leading_silence()` to trim excessive silence from TTS output head/tail before post-processing.
-
----
-
-## Summary: New Dependencies for pyproject.toml
-
-```toml
-[project]
-dependencies = [
-    # === EXISTING (unchanged) ===
-    "EbookLib>=0.20",
-    "beautifulsoup4>=4.14",
-    "lxml>=5.0",
-    "nltk>=3.8",
-    "typer>=0.24",
-    "rich>=13.0",
-    "ollama>=0.6",
-    "pydantic>=2.0",
-    "sentence-transformers>=3.0",
-    "pydub>=0.25.1",
-    "pyloudnorm>=0.2.0",
-    "mutagen>=1.47.0",
-    # === REMOVED ===
-    # "chatterbox-tts>=0.1.6",  # REMOVED — replaced by mlx-audio
-    # === ADDED ===
-    "mlx>=0.31.0",
-    "mlx-audio[tts]>=0.3.1",
-    "pedalboard>=0.9.22",
-    "resemblyzer>=0.1.3",
-]
-```
-
-**Net dependency change:**
-- Removed: `chatterbox-tts` (and its heavy transitive deps including direct torch/torchaudio management)
-- Added: `mlx` (~50MB), `mlx-audio[tts]` (~depends on mlx), `pedalboard` (~20MB native wheels), `resemblyzer` (~small, uses existing torch)
-- PyTorch remains as transitive dep of `sentence-transformers` and `resemblyzer` but is no longer directly managed or imported for TTS
-
-### Installation Changes
-
-```bash
-# System dependencies (unchanged)
-brew install ffmpeg
-
-# Ollama model upgrade
-ollama pull qwen3:14b-q4_K_M
-
-# Download Qwen3-TTS model (auto-downloaded on first use by mlx-audio,
-# or pre-download with huggingface-cli)
-huggingface-cli download mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit
-
-# Verify MLX works
-python -c "import mlx.core as mx; print(mx.default_device())"
-# Should print: Device(gpu, 0)
-```
-
-**CRITICAL: PyTorch install order no longer matters.** With Chatterbox removed, the fragile "install torch BEFORE chatterbox" requirement is eliminated. MLX is a standalone framework with no PyTorch dependency for TTS inference.
-
----
-
-## Alternatives Considered (New Additions Only)
-
-| Category | Recommended | Alternative | Why Not |
-|----------|-------------|-------------|---------|
-| TTS Engine | mlx-audio + Qwen3-TTS 1.7B | Chatterbox (current) | Memory leak, 280 char limit, no emotion control, requires PyTorch MPS hacks |
-| TTS Engine | mlx-audio + Qwen3-TTS 1.7B | F5-TTS via MLX | F5-TTS lacks emotion/style instruction parameter; voice cloning only without expressiveness control |
-| TTS Engine | mlx-audio + Qwen3-TTS 1.7B | Kokoro TTS | Kokoro is lighter (~1GB) but lacks voice cloning entirely; uses fixed voices only |
-| Audio Effects | pedalboard | noisereduce + scipy.signal | noisereduce is spectral gating only (no compressor, EQ, limiter). scipy requires manual filter design. Two separate packages vs one integrated chain. |
-| Audio Effects | pedalboard | pydub built-in effects | pydub's compressor is primitive (dBFS threshold only). No proper EQ, limiter, or noise gate. |
-| Audio Effects | pedalboard | ffmpeg -af filter chain | No Python-native API; subprocess stderr parsing for errors; hard to debug; no programmatic access to intermediate results |
-| Voice Consistency | resemblyzer | SpeechBrain ECAPA-TDNN | SpeechBrain pulls 864KB+ package plus heavy deps; ECAPA-TDNN accuracy (0.69% EER) is overkill for same-model drift detection |
-| Voice Consistency | resemblyzer | pyannote-audio | pyannote is a full diarization pipeline, not a lightweight embedder; massive dependency footprint |
-| Voice Consistency | resemblyzer | Custom embedding via sentence-transformers | sentence-transformers embeds TEXT not AUDIO; wrong modality for voice waveform comparison |
-| LLM Model | qwen3:14b Q4_K_M | qwen3:8b Q8_0 | Q8_0 at 8B uses 9GB — only marginally better quality than Q4_K_M at 14B which also uses ~10GB but has far more parameters and reasoning capability |
-| LLM Model | qwen3:14b Q4_K_M | qwen3:8b Q4_K_M (current) | 14B significantly outperforms 8B on nuanced tasks (emotion detection, complex dialogue attribution). Fits in 16GB with KV cache quantization. |
+**Libraries used:** sentence-transformers (existing), numpy (existing).
 
 ---
 
@@ -335,81 +148,188 @@ python -c "import mlx.core as mx; print(mx.default_device())"
 
 | Avoid | Why | What to Use Instead |
 |-------|-----|---------------------|
-| `noisereduce` as standalone dep | Spectral gating is not de-clicking. Adds PyTorch-based processing when pedalboard's C++ NoiseGate is faster and more appropriate for transient artifact removal. | pedalboard `NoiseGate` |
-| `sox` / `pysox` | System-level dependency with OS-specific installation issues. pysox is unmaintained. Everything sox does, pedalboard + pydub + ffmpeg can do. | pedalboard |
-| `librosa` | Heavy dependency (pulls numba, llvmlite, soundfile, etc.) just for audio feature extraction. Resemblyzer handles voice embeddings; pedalboard handles effects. No gap librosa fills. | resemblyzer + pedalboard |
-| `speechbrain` | Massive research toolkit when we need one function (embed audio). 864KB package + hundreds of MB in transitive deps. | resemblyzer (17MB model, single purpose) |
-| `pyannote-audio` | Full speaker diarization pipeline. We do not need diarization — we already know who speaks each line from LLM attribution. We only need embedding comparison for drift detection. | resemblyzer |
-| `transformers` (HuggingFace) directly | mlx-audio already handles model loading internally. Adding transformers directly creates version conflicts (mlx-audio pins `transformers<5.0.0`). | Let mlx-audio manage its own transformers dep |
-| Running Qwen3-TTS 1.7B bf16 | bf16 uses ~4GB vs 8-bit's ~3GB. On 16GB with post-processing overhead, the extra 1GB matters. Quality difference between 8-bit and bf16 is minimal for TTS. | 8-bit quantized model |
-| Python 3.12+ | Still risky. While Chatterbox is removed (eliminating the main 3.12 blocker), sentence-transformers and its transitive deps may have edge-case issues on 3.12. mlx-audio pins `transformers<5.0.0` which may conflict with newer Python. | Stay on Python 3.11 |
-| `torch` as explicit dependency | With Chatterbox gone, PyTorch should flow in as a transitive dep of sentence-transformers and resemblyzer, not be explicitly managed. Remove `torch==2.6.0` from install instructions. | Let pip resolve torch version from transitive deps |
+| `Qwen3-TTS CustomVoice model` | Cannot clone from LibriTTS-R. Locked to 9 preset speakers. Loses the project's core value proposition of matching characters to real human voices. | Stay on Base model + post-processing for emotion |
+| `Qwen3-TTS VoiceDesign model` | Creates voices from text descriptions, but cannot clone existing voices. Generated voices lack the human naturalness of LibriTTS-R references. | Stay on Base model |
+| `pyttsx3` / `espeak` for style control | Low-quality TTS engines. Style control exists but voice quality is orders of magnitude worse. | Post-processing approach |
+| `praat-parselmouth` for pitch manipulation | Adds a heavy dependency (Praat phonetics toolkit) for pitch shifting that numpy interpolation or pedalboard can handle. | numpy resampling or pedalboard |
+| `librosa` for audio feature extraction | Pulls in numba, llvmlite, soundfile. Not needed -- pitch/speed modification via numpy is sufficient for the subtle adjustments required. | numpy (existing) |
+| `sounddevice` or `pyaudio` | Not needed for batch processing. These are real-time playback libraries. | N/A -- batch pipeline |
+| Any emotion detection NLP library (e.g., `transformers` for sentiment) | Emotion detection is already done by the LLM (Qwen3 14B via Ollama). Adding a separate NLP model wastes memory and creates conflicting annotations. | Existing Ollama LLM |
+| `yaml` / `toml` for voice profiles | Voice profiles are Pydantic models serialized to JSON (consistent with all other data models in the project). Adding YAML/TOML config introduces a parallel config format. | Pydantic + JSON (existing) |
 
 ---
 
-## Version Compatibility Matrix (New Additions)
+## Recommended Stack Changes Summary
 
-| Package | Python 3.11 | macOS 14+ ARM64 | Interop Notes |
-|---------|-------------|-----------------|---------------|
-| `mlx>=0.31.0` | YES (3.10-3.14) | YES (native Apple Silicon) | No conflict with PyTorch — separate framework |
-| `mlx-audio[tts]>=0.3.1` | YES (3.10+) | YES | Pins `transformers<5.0.0`. May conflict if sentence-transformers pulls transformers>=5.0. Test carefully. |
-| `pedalboard>=0.9.22` | YES (3.10-3.14) | YES (ARM64 wheel: `cp311-macosx_11_0_arm64`) | No dependency conflicts. Pure C++ extension, no Python deps. GPLv3 license. |
-| `resemblyzer>=0.1.3` | YES (3.5+) | YES (pure Python + PyTorch) | Uses PyTorch for inference. Shares torch installation with sentence-transformers. |
-| Ollama `qwen3:14b-q4_K_M` | N/A (system) | YES | ~10GB memory. Use `OLLAMA_KV_CACHE_TYPE=q8_0` on 16GB systems. |
-
-**Potential conflict to watch:** mlx-audio pins `transformers<5.0.0`. If `sentence-transformers>=3.0` requires `transformers>=5.0` in a future release, pip will fail to resolve. Current sentence-transformers 3.x works with transformers 4.x, so this is safe NOW but could break on upgrade. Pin `sentence-transformers<4.0` if needed.
+| Component | Current (v1.1) | Change for v1.2 | New Deps? |
+|-----------|----------------|-----------------|-----------|
+| TTS Model | Qwen3-TTS 1.7B Base bf16 | **No change** -- stay on Base for voice cloning | No |
+| TTS API | `model.generate(text, ref_audio, ref_text)` | **No change** -- no `instruct` param available on Base | No |
+| Emotion -> Audio | Speech-act post-processing only (volume_db, speed_factor) | **Extend** with emotion-category deltas and optional pitch shift | No |
+| Voice Data Model | `VoiceQualities` + `VoiceBaseline` (separate) | **Merge** into single `VoiceProfile` Pydantic model | No |
+| Voice Matching | `trait_matcher` + `embedding_matcher` | **Enhance** to use unified `VoiceProfile.description` embedding | No |
+| Post-Processor | `apply_speech_act_adjustments()` | **Extend** to `apply_expression_adjustments(audio, sample_rate, speech_act, emotion, intensity)` | No |
 
 ---
 
-## Memory Budget by Phase (Updated for v1.1)
+## API Details for Existing Libraries
 
-| Phase | Primary Consumer | Memory | Budget Status |
-|-------|-----------------|--------|---------------|
-| 1. EPUB Parsing | Python + lxml | ~0.5 GB | Comfortable |
-| 2. LLM Attribution | Ollama qwen3:14b Q4_K_M | ~10 GB | Tight but fits with KV cache quant |
-| 3. Voice Matching | sentence-transformers (CPU) | ~1.5 GB | Comfortable |
-| 4. TTS Synthesis | Qwen3-TTS 1.7B 8-bit (MLX) | ~3.5 GB | Comfortable |
-| 4b. Post-processing | pedalboard + pyloudnorm | ~0.5 GB | Runs alongside TTS or after |
-| 5. Audio Assembly | pydub + ffmpeg | ~1 GB | Comfortable |
-| 5b. Voice Consistency | resemblyzer (CPU) | ~0.5 GB | Can run alongside assembly |
+### mlx-audio `model.generate()` -- Base Model (Current API, Unchanged)
 
-**Key constraint:** Phase 2 (LLM) is now the tightest phase at ~10GB for 14B Q4_K_M. If this proves unstable, fall back to 8B Q4_K_M (~5GB). Phase 4 (TTS) is now MUCH more comfortable — Qwen3-TTS 1.7B 8-bit via MLX uses ~3GB vs Chatterbox's ~4GB + PyTorch MPS overhead.
+```python
+from mlx_audio.tts.utils import load_model
+
+model = load_model("mlx-community/Qwen3-TTS-12Hz-1.7B-Base-bf16")
+
+# This is the ONLY generate method available on the Base model.
+# No instruct parameter. No style control. Voice cloning only.
+results = list(model.generate(
+    text="The door creaked open slowly.",
+    ref_audio="voices/speaker_7335.wav",
+    ref_text="She opened the door and stepped into the hallway.",
+))
+```
+
+**Parameters accepted by Base model `generate()`:**
+- `text` (str) -- text to synthesize
+- `ref_audio` (str) -- path to reference audio for voice cloning
+- `ref_text` (str) -- transcript of reference audio
+- `verbose` (bool) -- logging verbosity
+
+**Parameters NOT accepted by Base model:** `instruct`, `speaker`, `language` (CustomVoice-only).
+
+### pedalboard -- Extended Emotion Post-Processing
+
+Pitch shifting can be achieved via pedalboard's `PitchShift` plugin (available in pedalboard >=0.7.0, already installed at >=0.9.22):
+
+```python
+from pedalboard import PitchShift
+
+# Subtle pitch shift for emotion (e.g., +0.5 semitones for joy)
+pitch_shift = PitchShift(semitones=0.5)
+shifted_audio = pitch_shift(audio_array, sample_rate)
+```
+
+This adds pitch as a third dimension alongside the existing volume and speed adjustments, without any new dependencies.
+
+### Pydantic -- VoiceProfile Model Migration
+
+```python
+# Backward-compatible: old data with voice_qualities + voice_baseline
+# can be loaded and merged into VoiceProfile
+
+class CharacterProfile(BaseModel):
+    # ... existing fields ...
+    voice_profile: VoiceProfile          # NEW unified field
+    voice_qualities: VoiceQualities | None = None  # DEPRECATED, keep for migration
+    voice_baseline: VoiceBaseline | None = None    # DEPRECATED, keep for migration
+
+    @model_validator(mode="after")
+    def merge_legacy_fields(self) -> "CharacterProfile":
+        """Auto-populate voice_profile from legacy fields if not set."""
+        if self.voice_profile is None and self.voice_qualities is not None:
+            self.voice_profile = VoiceProfile.from_legacy(
+                self.voice_qualities, self.voice_baseline
+            )
+        return self
+```
+
+---
+
+## Memory Budget (Unchanged from v1.1)
+
+v1.2 adds no new models or heavy libraries. Memory profile is identical to v1.1:
+
+| Phase | Primary Consumer | Memory |
+|-------|-----------------|--------|
+| 2. LLM Attribution (with emotion) | Ollama qwen3:14b Q4_K_M | ~10 GB |
+| 4. TTS Synthesis | Qwen3-TTS 1.7B Base bf16 (MLX) | ~4 GB |
+| 4b. Post-processing | numpy + pedalboard | ~0.5 GB |
+
+No changes to the sequential phase architecture. LLM and TTS never run simultaneously.
+
+---
+
+## Installation Changes for v1.2
+
+```bash
+# No new packages to install.
+# No new models to download.
+# No new system dependencies.
+
+# Verify existing stack is sufficient:
+python -c "
+from pedalboard import PitchShift
+print('PitchShift available:', PitchShift is not None)
+
+from pydantic import BaseModel
+print('Pydantic available')
+
+import numpy as np
+print('NumPy available')
+"
+```
+
+---
+
+## Alternatives Considered
+
+| Goal | Recommended | Alternative | Why Not |
+|------|-------------|-------------|---------|
+| Emotion in voice | Post-processing (volume, speed, pitch) | Switch to CustomVoice model | Loses voice cloning from LibriTTS-R. Only 9 preset voices -- cannot match character voice traits. |
+| Emotion in voice | Post-processing | Wait for VoiceEditing model (25Hz) | Not released. Unknown timeline. Cannot plan v1.2 around unreleased software. |
+| Emotion in voice | Post-processing | Fine-tune Base model to accept instruct | Requires GPU training infrastructure, curated dataset, and significant time investment. Overkill for personal audiobook tool. |
+| Pitch manipulation | pedalboard PitchShift | librosa pitch_shift | Adds heavy deps (numba, llvmlite). pedalboard is already installed. |
+| Pitch manipulation | pedalboard PitchShift | praat-parselmouth | Adds Praat binary dependency. Harder to install on macOS. |
+| Voice profile format | Pydantic + JSON | YAML config files | Breaks consistency with all other data models in the project. |
+| Emotion taxonomy | Existing 8-category EmotionCategory enum | Expand to 15+ emotions | More categories = less reliable LLM classification. 8 categories map cleanly to distinct audio parameter profiles. |
+
+---
+
+## Future Considerations (Out of Scope for v1.2)
+
+| When Available | What | Impact |
+|----------------|------|--------|
+| Qwen3-TTS-25Hz-1.7B-VoiceEditing release | Model that may support voice cloning + style instructions | Could replace post-processing approach with native TTS-level emotion control |
+| mlx-audio v0.4+ | May add new APIs or fix CustomVoice chunking | Monitor releases monthly |
+| Fine-tuning Qwen3-TTS Base | Train Base model to follow instruct with cloned voices | Would require GPU training pipeline; consider for v1.3+ if post-processing approach proves insufficient |
 
 ---
 
 ## Sources
 
-### HIGH Confidence (PyPI / Official Docs)
-- MLX 0.31.0: https://pypi.org/project/mlx/ (verified 2026-03-04, released 2026-02-27)
-- mlx-audio 0.3.1: https://pypi.org/project/mlx-audio/ (verified 2026-03-04, released 2026-01-29)
-- pedalboard 0.9.22: https://pypi.org/project/pedalboard/ (verified 2026-03-04, released 2026-02-02)
-- pyloudnorm 0.2.0: https://pypi.org/project/pyloudnorm/ (verified 2026-03-04, released 2026-01-04)
-- noisereduce 3.0.3: https://pypi.org/project/noisereduce/ (verified 2026-03-04, released 2024-10-06)
-- MLX documentation: https://ml-explore.github.io/mlx/build/html/install.html
-- Pedalboard documentation: https://spotify.github.io/pedalboard/
-- Ollama qwen3:14b-q4_K_M: https://ollama.com/library/qwen3:14b-q4_K_M
+### HIGH Confidence (Official Documentation, Technical Report)
+- Qwen3-TTS Technical Report: https://arxiv.org/html/2601.15621v1 -- confirms Base model does NOT support instruction control
+- Qwen3-TTS-12Hz-1.7B-CustomVoice HuggingFace: https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice -- confirms 9 preset speakers only, no ref_audio
+- Qwen3-TTS-12Hz-1.7B-Base HuggingFace: https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-Base -- confirms voice cloning API
+- Qwen3-TTS GitHub: https://github.com/QwenLM/Qwen3-TTS -- official model comparison table
+- pedalboard PitchShift: https://spotify.github.io/pedalboard/ -- verified PitchShift available in current version
+- mlx-audio GitHub: https://github.com/Blaizzy/mlx-audio -- model loading and generate API
 
-### MEDIUM Confidence (GitHub / Community Sources)
+### MEDIUM Confidence (Community Sources, Discussions)
+- GitHub Discussion #231 (emotion in cloned voices): https://github.com/QwenLM/Qwen3-TTS/discussions/231 -- confirms Base model ignores instruct, community suggests waiting for VoiceEditing model
+- HuggingFace Discussion #38 (CustomVoice emotion): https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/discussions/38 -- workaround via fine-tuning, not viable for this project
+- myByways blog (mlx-audio on macOS): https://mybyways.com/blog/qwen3-tts-with-mlx-audio-on-macos -- confirms CustomVoice and Base are separate code paths
 - mlx-audio Qwen3-TTS README: https://github.com/Blaizzy/mlx-audio/blob/main/mlx_audio/tts/models/qwen3_tts/README.md
-- mlx-audio releases: https://github.com/Blaizzy/mlx-audio/releases
-- mlx-audio Issue #464 (audio dropout): https://github.com/Blaizzy/mlx-audio/issues/464
-- mlx-audio Issue #439 (accent loss after streaming change): https://github.com/Blaizzy/mlx-audio/issues/439
-- Qwen3-TTS Apple Silicon guide: https://github.com/kapi2800/qwen3-tts-apple-silicon
-- MLX Community Qwen3-TTS models: https://huggingface.co/collections/mlx-community/qwen3-tts
-- Qwen3-TTS 1.7B CustomVoice 8-bit: https://huggingface.co/mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit
-- Resemblyzer: https://github.com/resemble-ai/Resemblyzer (functionally stable, inactive maintenance)
-- Resemblyzer PyPI: https://pypi.org/project/Resemblyzer/
-- Ollama memory requirements guide: https://localllm.in/blog/ollama-vram-requirements-for-local-llms
-- Ollama Mac optimization: https://insiderllm.com/guides/ollama-mac-setup-optimization/
 
-### LOW Confidence (Single Source / Blog Posts)
-- Qwen3-TTS performance ~1000 chars/min on M2: https://mybyways.com/blog/qwen3-tts-with-mlx-audio-on-macos (single blog post, M2 not M4)
-- Qwen3-TTS voice cloning 10-15s optimal: https://ocdevel.com/blog/20260302-qwen-tts-voice-cloning (blog, not official docs)
-- 1.7B needs ~6GB RAM (non-quantized): https://github.com/kapi2800/qwen3-tts-apple-silicon (refers to non-quantized; 8-bit should be ~3GB)
-- LibriTTS-R: https://www.openslr.org/141/ (dataset page, not a pip package)
+### LOW Confidence (Unverified)
+- Pitch shift quality via pedalboard at sub-semitone levels for emotional expression -- needs empirical testing
+- Whether Base model's contextual prosody adaptation responds meaningfully to punctuation/word-choice manipulation -- needs A/B testing
+- Optimal emotion delta values (volume_db, speed_factor, pitch_semitones) -- need tuning against real audiobook output
 
 ---
 
-*Stack research for: audio-book-plz v1.1 improvements*
-*Focus: Qwen3-TTS MLX migration, audio post-processing, voice consistency, LLM upgrade*
-*Researched: 2026-03-04*
+## CORRECTION to v1.1 STACK.md
+
+The v1.1 STACK.md (lines 82-104) incorrectly shows CustomVoice model as supporting both `ref_audio` voice cloning AND `instruct` style control. This is wrong:
+
+- `generate_custom_voice()` does NOT accept `ref_audio`
+- `generate()` on Base model does NOT accept `instruct`
+
+The v1.1 code (qwen_engine.py) correctly uses the Base model with `model.generate(text, ref_audio, ref_text)` -- no instruct parameter. The v1.1 STACK.md documentation was aspirational, not factual. The actual v1.1 implementation is correct; only the research document had the error.
+
+---
+
+*Stack research for: audio-book-plz v1.2 voice expression features*
+*Focus: Qwen3-TTS style conditioning limitations, emotion-to-prosody via post-processing, voice profile unification*
+*Researched: 2026-03-06*
