@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Voice Expression
 status: in-progress
-stopped_at: Completed 12-02-PLAN.md
-last_updated: "2026-03-07T07:11:31Z"
-last_activity: 2026-03-07 -- Completed 12-02 trait matcher caching and doc updates
+stopped_at: Completed 12-01-PLAN.md
+last_updated: "2026-03-07T07:13:03Z"
+last_activity: 2026-03-07 -- Completed 12-01 emotion removal and speech-act flags
 progress:
   total_phases: 3
   completed_phases: 1
@@ -48,6 +48,7 @@ Progress: [██████████] 100% (2/2 plans in phase 12)
 
 | Phase | Plan | Duration | Tasks | Files |
 |-------|------|----------|-------|-------|
+| 12 | 01 | 12min | 2 | 13 |
 | 12 | 02 | 10min | 2 | 5 |
 
 ## Accumulated Context
@@ -64,6 +65,7 @@ Recent decisions affecting current work:
 - [Phase 11]: Coarse traits only for embeddings -- rich descriptors don't embed close to LibriTTS-P vocabulary
 - [Phase 12]: Cache key includes character profile + sorted available candidate IDs for invalidation when pool shrinks
 - [Phase 12]: Milestone restructured from 5 phases (11-15) to 3 phases (11-13) after emotion system removal
+- [Phase 12]: Emotion system fully removed; speech-act FX and LLM refinement made opt-in via feature flags
 
 ### Pending Todos
 
@@ -75,6 +77,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-07T07:11:31Z
-Stopped at: Completed 12-02-PLAN.md
-Resume file: .planning/phases/12-expression-system-core/12-02-SUMMARY.md
+Last session: 2026-03-07T07:13:03Z
+Stopped at: Completed 12-01-PLAN.md
+Resume file: .planning/phases/12-expression-system-core/12-01-SUMMARY.md
