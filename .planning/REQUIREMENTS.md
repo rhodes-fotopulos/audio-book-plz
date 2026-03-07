@@ -9,8 +9,8 @@ Requirements for v1.2 Voice Expression milestone. Each maps to roadmap phases.
 
 ### Data Model
 
-- [ ] **MODEL-01**: VoiceProfile unifies VoiceQualities and VoiceBaseline into single model with all unique attributes (pitch, pace, tone, accent, energy, typical_emotion, description)
-- [ ] **MODEL-02**: Existing characters.json files load into new VoiceProfile schema without re-extraction (backward-compatible migration)
+- [x] **MODEL-01**: VoiceProfile unifies VoiceQualities and VoiceBaseline into single model with all unique attributes (pitch, pace, tone, accent, energy, typical_emotion, description)
+- [x] **MODEL-02**: Existing characters.json files load into new VoiceProfile schema without re-extraction (backward-compatible migration)
 
 ### Voice Matching
 
@@ -67,8 +67,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| MODEL-01 | Phase 11 | Pending |
-| MODEL-02 | Phase 11 | Pending |
+| MODEL-01 | Phase 11 | Complete |
+| MODEL-02 | Phase 11 | Complete |
 | MATCH-01 | Phase 11 | Pending |
 | MATCH-02 | Phase 11 | Pending |
 | EXPR-01 | Phase 12 | Pending |
