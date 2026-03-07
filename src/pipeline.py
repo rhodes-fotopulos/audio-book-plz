@@ -402,6 +402,7 @@ def run_synthesize(
     engine_type: str = "qwen3",
     libritts_audio_dir: Path | None = None,
     speech_act_fx: bool = False,
+    batch_by_character: bool = False,
 ) -> Path:
     """End-to-end synthesis phase: attributed segments -> WAV audio files.
 
@@ -420,6 +421,9 @@ def run_synthesize(
             reference preparation with transcripts.
         speech_act_fx: If True, enable speech-act audio post-processing
             (volume/speed adjustments for whispered/shouted/thought).
+        batch_by_character: If True, synthesize all segments per character
+            consecutively instead of chapter-by-chapter. Reduces MLX cache
+            thrashing between voices.
 
     Returns:
         Path to the wavs output directory.
@@ -500,6 +504,7 @@ def run_synthesize(
         device="cpu" if cpu else "auto",
         engine_type=engine_type,
         speech_act_fx=speech_act_fx,
+        batch_by_character=batch_by_character,
     )
 
     # Handle --cpu with Qwen3 (MLX manages device selection)
@@ -730,6 +735,7 @@ def run_full_pipeline(
     voice_threshold: float = 0.60,
     mp3_output_dir: Path | None = None,
     speech_act_fx: bool = False,
+    batch_by_character: bool = False,
 ) -> None:
     """Orchestrate all pipeline phases.
 
@@ -747,6 +753,8 @@ def run_full_pipeline(
         voice_threshold: Cosine similarity threshold for voice consistency.
         mp3_output_dir: If provided, MP3 output goes here instead of book dir.
         speech_act_fx: If True, enable speech-act audio post-processing.
+        batch_by_character: If True, synthesize per-character instead of
+            per-chapter to reduce MLX cache thrashing.
     """
     rprint("\n[bold green]Phase 1: Parse[/bold green]")
     run_parse(epub_path, output_dir)
@@ -774,6 +782,7 @@ def run_full_pipeline(
         engine_type=engine_type,
         libritts_audio_dir=libritts_audio_dir,
         speech_act_fx=speech_act_fx,
+        batch_by_character=batch_by_character,
     )
 
     rprint("\n[bold green]Phase 4.5: Voice Consistency[/bold green]")

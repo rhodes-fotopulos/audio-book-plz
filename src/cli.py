@@ -98,6 +98,11 @@ def convert(
         "--speech-act-fx",
         help="Enable speech-act audio adjustments (whispered/shouted/thought volume/speed changes)",
     ),
+    batch_by_character: bool = typer.Option(
+        False,
+        "--batch-by-character",
+        help="Synthesize per-character (all segments for each voice consecutively) instead of chapter-by-chapter",
+    ),
 ) -> None:
     """Run full pipeline: parse -> attribute -> match -> synthesize -> assemble."""
     if epub_file.suffix.lower() != ".epub":
@@ -131,6 +136,7 @@ def convert(
         cpu=cpu, engine_type=engine, model_override=model,
         voice_threshold=voice_threshold, mp3_output_dir=mp3_dir,
         speech_act_fx=speech_act_fx,
+        batch_by_character=batch_by_character,
     )
 
 
@@ -269,6 +275,11 @@ def synthesize(
         "--speech-act-fx",
         help="Enable speech-act audio adjustments (whispered/shouted/thought volume/speed changes)",
     ),
+    batch_by_character: bool = typer.Option(
+        False,
+        "--batch-by-character",
+        help="Synthesize per-character (all segments for each voice consecutively) instead of chapter-by-chapter",
+    ),
 ) -> None:
     """Synthesize audio segments with Qwen3-TTS."""
     # Validate prerequisites
@@ -294,6 +305,7 @@ def synthesize(
         cpu=cpu, engine_type=engine,
         libritts_audio_dir=libritts_audio,
         speech_act_fx=speech_act_fx,
+        batch_by_character=batch_by_character,
     )
 
 

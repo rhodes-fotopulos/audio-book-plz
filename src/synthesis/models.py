@@ -55,6 +55,10 @@ class SynthesisConfig:
     speech_act_fx: bool = False
     """Apply speech-act audio post-processing (volume/speed adjustments for whispered/shouted/thought). Default OFF — TTS engine natural prosody is trusted."""
 
+    # Batch-by-character synthesis
+    batch_by_character: bool = False
+    """Synthesize all segments per character consecutively instead of chapter-by-chapter. Reduces MLX cache thrashing between voices."""
+
 
 # ---------------------------------------------------------------------------
 # Per-segment result
