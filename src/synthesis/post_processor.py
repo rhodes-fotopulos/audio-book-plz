@@ -6,9 +6,9 @@ Applies volume and speed adjustments based on speech-act type:
 - shouted:   +4.5 dB volume, 8% speed increase
 - thought:   -3.0 dB volume, 7% speed decrease
 
-Adjustments are ABSOLUTE per speech-act type, NOT cumulative with
-scene mood (per user decision). Scene mood annotations are stored
-for future enrichment but do not modify audio in v1.1.
+Adjustments are ABSOLUTE per speech-act type. Disabled by default
+(speech_act_fx=False in SynthesisConfig) because LUFS normalization
+in the assembly phase undoes volume deltas.
 """
 
 from __future__ import annotations
