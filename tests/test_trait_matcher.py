@@ -6,10 +6,12 @@ Covers:
 - match_narrator_llm first-person and third-person modes
 - Invalid speaker_id handling
 - None/failure handling
+- Cache hit/miss/invalidation for LLM calls
 """
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -300,3 +302,150 @@ class TestHelpers:
     def test_infer_book_tone_empty(self) -> None:
         tone = _infer_book_tone([])
         assert "neutral" in tone.lower() or "literary" in tone.lower()
+
+
+# ---------------------------------------------------------------------------
+# Cache tests
+# ---------------------------------------------------------------------------
+
+
+class TestCharacterLLMCache:
+    """Tests for trait matcher LLM result caching."""
+
+    @patch("src.matching.trait_matcher.call_llm_structured")
+    def test_cache_hit_skips_llm(
+        self, mock_llm, sample_character, sample_candidates, tmp_path: Path
+    ) -> None:
+        """Second call with same inputs returns cached result, LLM called once."""
+        mock_llm.return_value = MatchResponse(
+            speaker_id="100",
+            reasoning="Calm, intellectual voice",
+            confidence=0.88,
+        )
+        # First call - LLM called, result cached
+        result1 = match_character_llm(
+            sample_character, sample_candidates, cache_dir=tmp_path
+        )
+        assert result1 is not None
+        assert mock_llm.call_count == 1
+
+        # Second call - same inputs, should hit cache
+        result2 = match_character_llm(
+            sample_character, sample_candidates, cache_dir=tmp_path
+        )
+        assert result2 is not None
+        assert result2.speaker_id == result1.speaker_id
+        assert result2.confidence == result1.confidence
+        # LLM should NOT have been called again
+        assert mock_llm.call_count == 1
+
+    @patch("src.matching.trait_matcher.call_llm_structured")
+    def test_cache_miss_on_different_character(
+        self, mock_llm, sample_character, sample_candidates, tmp_path: Path
+    ) -> None:
+        """Different character profile causes cache miss."""
+        mock_llm.return_value = MatchResponse(
+            speaker_id="100",
+            reasoning="Good match",
+            confidence=0.85,
+        )
+        # First call with original character
+        match_character_llm(
+            sample_character, sample_candidates, cache_dir=tmp_path
+        )
+        assert mock_llm.call_count == 1
+
+        # Second call with different character
+        different_char = sample_character.model_copy(
+            update={"name": "Elizabeth", "gender": "female"}
+        )
+        mock_llm.return_value = MatchResponse(
+            speaker_id="200",
+            reasoning="Different match",
+            confidence=0.80,
+        )
+        result = match_character_llm(
+            different_char, sample_candidates, cache_dir=tmp_path
+        )
+        assert result is not None
+        # LLM should have been called again
+        assert mock_llm.call_count == 2
+
+    @patch("src.matching.trait_matcher.call_llm_structured")
+    def test_cache_invalidation_on_different_assigned_ids(
+        self, mock_llm, sample_character, sample_candidates, tmp_path: Path
+    ) -> None:
+        """Same character but different assigned_ids (different available pool) causes cache miss."""
+        mock_llm.return_value = MatchResponse(
+            speaker_id="100",
+            reasoning="Best match",
+            confidence=0.88,
+        )
+        # First call with no assigned IDs
+        match_character_llm(
+            sample_character, sample_candidates, cache_dir=tmp_path
+        )
+        assert mock_llm.call_count == 1
+
+        # Second call with assigned_ids changing the available pool
+        mock_llm.return_value = MatchResponse(
+            speaker_id="300",
+            reasoning="Next best",
+            confidence=0.75,
+        )
+        result = match_character_llm(
+            sample_character, sample_candidates,
+            assigned_ids={"100"}, cache_dir=tmp_path
+        )
+        assert result is not None
+        # LLM should have been called again because available candidates changed
+        assert mock_llm.call_count == 2
+
+    @patch("src.matching.trait_matcher.call_llm_structured")
+    def test_no_cache_when_cache_dir_none(
+        self, mock_llm, sample_character, sample_candidates
+    ) -> None:
+        """Functions work without caching when cache_dir not provided (backward compat)."""
+        mock_llm.return_value = MatchResponse(
+            speaker_id="100",
+            reasoning="Match",
+            confidence=0.85,
+        )
+        # Two calls without cache_dir
+        result1 = match_character_llm(sample_character, sample_candidates)
+        result2 = match_character_llm(sample_character, sample_candidates)
+        assert result1 is not None
+        assert result2 is not None
+        # LLM called twice (no caching)
+        assert mock_llm.call_count == 2
+
+
+class TestNarratorLLMCache:
+    """Tests for narrator LLM result caching."""
+
+    @patch("src.matching.trait_matcher.call_llm_structured")
+    def test_narrator_cache_hit(
+        self, mock_llm, sample_characters, sample_segments,
+        sample_candidates, tmp_path: Path
+    ) -> None:
+        """Narrator matching caches and reuses results."""
+        mock_llm.return_value = MatchResponse(
+            speaker_id="300",
+            reasoning="Dark tone match",
+            confidence=0.85,
+        )
+        result1 = match_narrator_llm(
+            sample_characters, sample_segments, sample_candidates,
+            narrator_mode="third_person", cache_dir=tmp_path
+        )
+        assert result1 is not None
+        assert mock_llm.call_count == 1
+
+        # Second call - same inputs, should hit cache
+        result2 = match_narrator_llm(
+            sample_characters, sample_segments, sample_candidates,
+            narrator_mode="third_person", cache_dir=tmp_path
+        )
+        assert result2 is not None
+        assert result2.speaker_id == result1.speaker_id
+        assert mock_llm.call_count == 1
