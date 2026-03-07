@@ -19,15 +19,18 @@ from pydantic import BaseModel, ConfigDict
 # ---------------------------------------------------------------------------
 
 
-class VoiceQualities(BaseModel):
-    """Vocal characteristics for a character, used by Phase 3 voice matching.
+class VoiceProfile(BaseModel):
+    """Unified voice description for a character.
 
-    Values are inferred from text descriptions and dialogue style.
-    Use "unknown" when the text provides no evidence for a trait.
+    Combines coarse traits (aligned with LibriTTS-P annotation vocabulary
+    for embedding matching) with rich descriptors (for LLM casting and
+    emotion baseline). All fields default to "unknown" when text provides
+    no evidence.
     """
 
     model_config = ConfigDict(strict=True)
 
+    # Coarse traits (LibriTTS-P aligned)
     pitch: str
     """Vocal pitch: "high", "medium", "low", or "unknown"."""
 
@@ -40,36 +43,26 @@ class VoiceQualities(BaseModel):
     accent: str
     """Accent if mentioned: e.g. "British", "Southern American", "unknown"."""
 
+    # Rich descriptors (LLM casting + emotion baseline)
+    pace_style: str
+    """Nuanced speaking pace: e.g. "measured", "rapid", "languid", "clipped", "unknown"."""
+
+    tone_style: str
+    """Nuanced vocal quality: e.g. "gravelly", "melodic", "breathy", "flat", "unknown"."""
+
+    energy: str
+    """Energy level: e.g. "restrained", "animated", "intense", "subdued", "unknown"."""
+
+    typical_emotion: str
+    """Default emotional register: e.g. "sardonic", "cheerful", "weary", "unknown"."""
+
+    description: str
+    """One-sentence voice summary: e.g. "A slow, gravelly voice with weary patience"."""
+
 
 # ---------------------------------------------------------------------------
 # Character profile (registry entry + extraction result)
 # ---------------------------------------------------------------------------
-
-
-class VoiceBaseline(BaseModel):
-    """Default speaking style for a character (3-5 descriptors).
-
-    Used by the emotion system (Phase 8+) to establish each character's
-    baseline vocal qualities. The three-layer emotion system uses this as
-    layer 1 (character default) before applying scene mood and line overrides.
-    """
-
-    model_config = ConfigDict(strict=True)
-
-    pace: str
-    """Speaking pace: e.g. 'measured', 'rapid', 'languid', 'clipped'."""
-
-    tone: str
-    """Vocal tone: e.g. 'warm', 'gravelly', 'melodic', 'flat', 'breathy'."""
-
-    energy: str
-    """Energy level: e.g. 'restrained', 'animated', 'intense', 'subdued'."""
-
-    typical_emotion: str
-    """Default emotional register: e.g. 'sardonic', 'cheerful', 'weary'."""
-
-    description: str
-    """One-sentence summary: 'A slow, gravelly voice with weary patience'."""
 
 
 class CharacterProfile(BaseModel):
@@ -77,7 +70,7 @@ class CharacterProfile(BaseModel):
 
     Used both as individual extraction results (per-chapter) and as entries
     in the merged character registry (characters.json). Rich profile per
-    user decision: gender, age, voice qualities, personality.
+    user decision: gender, age, voice profile, personality.
     """
 
     model_config = ConfigDict(strict=True)
@@ -94,8 +87,8 @@ class CharacterProfile(BaseModel):
     age_range: str
     """Age range: "child", "young adult", "middle-aged", "elderly", or "unknown"."""
 
-    voice_qualities: VoiceQualities
-    """Inferred vocal characteristics for voice matching."""
+    voice_profile: VoiceProfile
+    """Unified voice description for voice matching and emotion baseline."""
 
     personality_traits: list[str] = []
     """Key personality characteristics shown in the text."""
@@ -105,9 +98,6 @@ class CharacterProfile(BaseModel):
 
     is_named: bool
     """True for named characters ("Mr. Darcy"), False for unnamed ("the bartender")."""
-
-    voice_baseline: VoiceBaseline | None = None
-    """Default speaking style (Phase 8+). None for backward compatibility."""
 
 
 # ---------------------------------------------------------------------------
