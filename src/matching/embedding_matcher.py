@@ -73,9 +73,9 @@ def _build_character_text(character: CharacterProfile) -> str:
     if character.age_range != "unknown":
         parts.append(character.age_range)
 
-    # Voice qualities
-    vq = character.voice_qualities
-    for attr in [vq.pitch, vq.pace, vq.tone, vq.accent]:
+    # Voice profile — coarse traits only (LibriTTS-P aligned)
+    vp = character.voice_profile
+    for attr in [vp.pitch, vp.pace, vp.tone, vp.accent]:
         if attr != "unknown":
             parts.append(attr)
 

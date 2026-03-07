@@ -113,14 +113,16 @@ def run_matching(
         # Embedding fallback for narrator
         rprint("  [yellow]LLM failed for narrator, using embedding fallback[/yellow]")
         # Create a simple narrator character profile for embedding matching
-        from src.attribution.models import VoiceQualities
+        from src.attribution.models import VoiceProfile
         narrator_char = CharacterProfile(
             name="narrator",
             aliases=[],
             gender="unknown",
             age_range="unknown",
-            voice_qualities=VoiceQualities(
-                pitch="medium", pace="moderate", tone="neutral", accent="unknown"
+            voice_profile=VoiceProfile(
+                pitch="medium", pace="moderate", tone="neutral", accent="unknown",
+                pace_style="measured", tone_style="clear", energy="moderate",
+                typical_emotion="neutral", description="Neutral, clear narrator voice",
             ),
             personality_traits=["clear", "measured"],
             description="Book narrator",
