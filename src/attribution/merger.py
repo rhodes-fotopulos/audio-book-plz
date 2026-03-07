@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from src.attribution.models import CharacterProfile, VoiceQualities
+from src.attribution.models import CharacterProfile, VoiceProfile
 
 logger = logging.getLogger(__name__)
 
@@ -146,11 +146,8 @@ def _merge_two_profiles(
     # Remove empty strings
     all_aliases.discard("")
 
-    # Merge voice qualities: prefer non-"unknown" values
-    merged_vq = _merge_voice_qualities(
-        primary.voice_qualities, secondary.voice_qualities,
-        primary.description, secondary.description,
-    )
+    # Merge voice profiles: prefer non-"unknown" values
+    merged_vp = _merge_voice_profiles(primary.voice_profile, secondary.voice_profile)
 
     # Union of personality traits (deduplicated)
     all_traits: list[str] = list(dict.fromkeys(
@@ -177,34 +174,30 @@ def _merge_two_profiles(
         aliases=sorted(all_aliases),
         gender=gender,
         age_range=age_range,
-        voice_qualities=merged_vq,
+        voice_profile=merged_vp,
         personality_traits=all_traits,
         description=description,
         is_named=is_named,
     )
 
 
-def _merge_voice_qualities(
-    vq_a: VoiceQualities,
-    vq_b: VoiceQualities,
-    desc_a: str,
-    desc_b: str,
-) -> VoiceQualities:
-    """Merge two VoiceQualities, preferring non-unknown values.
+def _merge_voice_profiles(
+    vp_a: VoiceProfile,
+    vp_b: VoiceProfile,
+) -> VoiceProfile:
+    """Merge two VoiceProfiles, preferring non-unknown values.
 
-    When both have non-unknown values, prefer the one associated with
-    the longer description (more textual evidence).
+    When both have non-unknown values, prefer the profile with the
+    longer description (more textual evidence).
 
     Args:
-        vq_a: Voice qualities from profile A.
-        vq_b: Voice qualities from profile B.
-        desc_a: Description from profile A (for evidence heuristic).
-        desc_b: Description from profile B (for evidence heuristic).
+        vp_a: Voice profile from profile A.
+        vp_b: Voice profile from profile B.
 
     Returns:
-        Merged VoiceQualities.
+        Merged VoiceProfile.
     """
-    prefer_a = len(desc_a) >= len(desc_b)
+    prefer_a = len(vp_a.description) >= len(vp_b.description)
 
     def pick(val_a: str, val_b: str) -> str:
         if val_a == "unknown" and val_b != "unknown":
@@ -215,11 +208,19 @@ def _merge_voice_qualities(
             return val_a if prefer_a else val_b
         return "unknown"
 
-    return VoiceQualities(
-        pitch=pick(vq_a.pitch, vq_b.pitch),
-        pace=pick(vq_a.pace, vq_b.pace),
-        tone=pick(vq_a.tone, vq_b.tone),
-        accent=pick(vq_a.accent, vq_b.accent),
+    # Description: take the longer one directly
+    desc = vp_a.description if len(vp_a.description) >= len(vp_b.description) else vp_b.description
+
+    return VoiceProfile(
+        pitch=pick(vp_a.pitch, vp_b.pitch),
+        pace=pick(vp_a.pace, vp_b.pace),
+        tone=pick(vp_a.tone, vp_b.tone),
+        accent=pick(vp_a.accent, vp_b.accent),
+        pace_style=pick(vp_a.pace_style, vp_b.pace_style),
+        tone_style=pick(vp_a.tone_style, vp_b.tone_style),
+        energy=pick(vp_a.energy, vp_b.energy),
+        typical_emotion=pick(vp_a.typical_emotion, vp_b.typical_emotion),
+        description=desc,
     )
 
 
