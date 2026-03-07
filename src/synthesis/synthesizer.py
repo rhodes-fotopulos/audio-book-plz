@@ -83,6 +83,188 @@ def _generate_segment_audio(
     )
 
 
+def _process_segment(
+    engine,
+    seg: dict,
+    voice_lookup: dict[str, dict],
+    wavs_dir: Path,
+    config: SynthesisConfig,
+    progress: SynthesisProgress,
+    cp: dict,
+    restarted_once: bool,
+    _warned_placeholders: set[str],
+) -> tuple[bool, SegmentResult | None, bool]:
+    """Process a single segment: generate audio, retry on failure, save checkpoint.
+
+    Returns:
+        Tuple of (success, result, restarted_once).
+        result is None only if something very unexpected happens.
+    """
+    seg_id = seg["id"]
+    speaker = seg.get("speaker", "narrator")
+    voice = voice_lookup.get(speaker, voice_lookup.get("narrator"))
+    ref_clip = voice["clip_path"] if voice else ""
+    ref_transcript = voice.get("transcript") if voice else None
+    char_name = speaker
+    seg_type = seg.get("type", "narration")
+    ch_num = seg["chapter"]
+
+    wav_path = str(wavs_dir / f"ch{ch_num:02d}" / f"seg_{seg_id:04d}.wav")
+    rel_wav_path = f"wavs/ch{ch_num:02d}/seg_{seg_id:04d}.wav"
+
+    # Check for placeholder clip paths (warn once per character)
+    if ref_clip.startswith("AUDIO_DIR/") and char_name not in _warned_placeholders:
+        _warned_placeholders.add(char_name)
+        logger.warning(
+            "Placeholder clip path for %s: %s — audio quality may suffer",
+            char_name,
+            ref_clip,
+        )
+
+    # ---- Retry loop ----
+    success = False
+    last_error = ""
+    text_chunks = None
+    for attempt in range(1, config.max_retries + 1):
+        try:
+            text = seg.get("text", "")
+            text_chunks = chunk_text_qwen(text)
+
+            gen_start = time.monotonic()
+            audio_result = _generate_segment_audio(
+                engine, text_chunks, ref_clip, ref_transcript, seg_type,
+                character_name=char_name,
+            )
+            gen_time = time.monotonic() - gen_start
+
+            # Apply speech-act post-processing (only when enabled)
+            if config.speech_act_fx:
+                speech_act = seg.get("speech_act", "spoken")
+                if speech_act != "spoken":
+                    adj_audio, _ = apply_speech_act_adjustments(
+                        audio_result.audio, audio_result.sample_rate, speech_act
+                    )
+                    audio_result = AudioResult(
+                        audio=adj_audio,
+                        sample_rate=audio_result.sample_rate,
+                        duration_s=len(adj_audio) / audio_result.sample_rate,
+                    )
+                    logger.debug(
+                        "Applied %s adjustments to seg_%04d",
+                        speech_act, seg_id,
+                    )
+
+            saved = engine.save_wav_atomic(audio_result, wav_path)
+            if not saved:
+                raise RuntimeError("WAV duration below minimum threshold")
+
+            duration = audio_result.duration_s
+
+            result = SegmentResult(
+                segment_id=seg_id,
+                wav_path=rel_wav_path,
+                duration_s=duration,
+                generation_time_s=gen_time,
+                character_name=char_name,
+                success=True,
+                attempts=attempt,
+            )
+            mark_completed(cp, seg_id, rel_wav_path, duration, gen_time)
+            progress.update_segment(result)
+            success = True
+            return True, result, restarted_once
+
+        except Exception as exc:
+            last_error = str(exc)
+            progress.log_failure(
+                seg_id, last_error, attempt, config.max_retries
+            )
+
+            # Memory errors — cleanup before retry
+            if "MPS" in last_error or "OOM" in last_error.upper() or "Metal" in last_error:
+                engine.cleanup_memory()
+
+                # Fatal crash — try restart once
+                if attempt == config.max_retries and not restarted_once:
+                    progress.log_message(
+                        f"Attempting {engine.engine_name} restart..."
+                    )
+                    try:
+                        engine.unload()
+                        engine.load_model()
+                        restarted_once = True
+                        try:
+                            gen_start = time.monotonic()
+                            audio_result = _generate_segment_audio(
+                                engine, text_chunks, ref_clip,
+                                ref_transcript, seg_type,
+                                character_name=char_name,
+                            )
+                            gen_time = time.monotonic() - gen_start
+
+                            # Apply speech-act post-processing (only when enabled)
+                            if config.speech_act_fx:
+                                speech_act = seg.get("speech_act", "spoken")
+                                if speech_act != "spoken":
+                                    adj_audio, _ = apply_speech_act_adjustments(
+                                        audio_result.audio,
+                                        audio_result.sample_rate,
+                                        speech_act,
+                                    )
+                                    audio_result = AudioResult(
+                                        audio=adj_audio,
+                                        sample_rate=audio_result.sample_rate,
+                                        duration_s=len(adj_audio) / audio_result.sample_rate,
+                                    )
+
+                            saved = engine.save_wav_atomic(
+                                audio_result, wav_path
+                            )
+                            if saved:
+                                duration = audio_result.duration_s
+                                result = SegmentResult(
+                                    segment_id=seg_id,
+                                    wav_path=rel_wav_path,
+                                    duration_s=duration,
+                                    generation_time_s=gen_time,
+                                    character_name=char_name,
+                                    success=True,
+                                    attempts=attempt + 1,
+                                )
+                                mark_completed(
+                                    cp, seg_id, rel_wav_path,
+                                    duration, gen_time,
+                                )
+                                progress.update_segment(result)
+                                return True, result, restarted_once
+                        except Exception as restart_exc:
+                            last_error = str(restart_exc)
+                            progress.log_message(
+                                f"Post-restart attempt failed: {last_error}"
+                            )
+                    except Exception as reload_exc:
+                        progress.log_message(
+                            f"Model reload failed: {reload_exc} — exiting cleanly"
+                        )
+                        save_checkpoint(cp, wavs_dir.parent)
+                        raise
+
+    # All retries exhausted
+    result = SegmentResult(
+        segment_id=seg_id,
+        wav_path=rel_wav_path,
+        duration_s=0.0,
+        generation_time_s=0.0,
+        character_name=char_name,
+        success=False,
+        error=last_error,
+        attempts=config.max_retries,
+    )
+    mark_failed(cp, seg_id, last_error, config.max_retries)
+    progress.update_segment(result)
+    return False, result, restarted_once
+
+
 def run_synthesis(
     book_dir: Path,
     voice_map: VoiceMap,
@@ -247,216 +429,103 @@ def run_synthesis(
     seg_counter = 0
     _warned_placeholders: set[str] = set()  # deduplicate placeholder warnings
 
+    def _run_segment(seg: dict) -> bool:
+        """Run a single segment through _process_segment and update counters.
+
+        Returns True if processing should continue, False if threshold breached.
+        """
+        nonlocal completed_count, failed_count, total_audio_s, seg_counter, restarted_once
+
+        seg_id = seg["id"]
+        if seg_id not in pending_set:
+            return True
+
+        success, result, restarted_once = _process_segment(
+            engine, seg, voice_lookup, wavs_dir, config, progress, cp,
+            restarted_once, _warned_placeholders,
+        )
+
+        if success and result:
+            completed_count += 1
+            total_audio_s += result.duration_s
+        elif not success:
+            failed_count += 1
+            failed_segments.append(seg)
+
+        # Save checkpoint after every segment
+        save_checkpoint(cp, book_dir)
+        seg_counter += 1
+
+        # Periodic memory cleanup
+        if seg_counter % config.mlx_cleanup_interval == 0:
+            engine.cleanup_memory()
+
+        # Check failure threshold
+        total_processed = completed_count + failed_count
+        if (
+            total_processed >= 20
+            and failed_count / total_processed > config.failure_threshold
+        ):
+            progress.log_message(
+                f"Failure rate {failed_count}/{total_processed} "
+                f"({failed_count / total_processed:.0%}) exceeds "
+                f"threshold ({config.failure_threshold:.0%}) — stopping"
+            )
+            save_checkpoint(cp, book_dir)
+            return False
+
+        return True
+
     try:
-        for ch_idx, ch_num in enumerate(chapter_numbers):
-            ch_segs = sorted(chapters[ch_num], key=lambda s: s["id"])
-            ch_title = ch_segs[0].get("chapter_title", "") if ch_segs else ""
-            progress.update_chapter(ch_num, ch_title)
+        if config.batch_by_character:
+            # ---- Batch-by-character path ----
+            # Group ALL pending segments by speaker
+            speaker_groups: dict[str, list[dict]] = defaultdict(list)
+            for seg in segments:
+                if seg["id"] in pending_set:
+                    speaker = seg.get("speaker", "narrator")
+                    speaker_groups[speaker].append(seg)
 
-            for seg in ch_segs:
-                seg_id = seg["id"]
-                if seg_id not in pending_set:
-                    continue
+            # Sort speakers: most segments first (keeps longest-running voice warm longest)
+            sorted_speakers = sorted(
+                speaker_groups.keys(),
+                key=lambda s: len(speaker_groups[s]),
+                reverse=True,
+            )
 
-                # Voice lookup
-                speaker = seg.get("speaker", "narrator")
-                voice = voice_lookup.get(speaker, voice_lookup.get("narrator"))
-                ref_clip = voice["clip_path"] if voice else ""
-                ref_transcript = voice.get("transcript") if voice else None
-                char_name = speaker
-                seg_type = seg.get("type", "narration")
+            threshold_breached = False
+            for char_idx, speaker in enumerate(sorted_speakers):
+                speaker_segs = sorted(speaker_groups[speaker], key=lambda s: s["id"])
+                progress.update_character(speaker, len(speaker_segs), char_idx)
 
-                # WAV output path
-                wav_path = str(
-                    wavs_dir / f"ch{ch_num:02d}" / f"seg_{seg_id:04d}.wav"
-                )
-                rel_wav_path = f"wavs/ch{ch_num:02d}/seg_{seg_id:04d}.wav"
-
-                # Check for placeholder clip paths (warn once per character)
-                if ref_clip.startswith("AUDIO_DIR/") and char_name not in _warned_placeholders:
-                    _warned_placeholders.add(char_name)
-                    logger.warning(
-                        "Placeholder clip path for %s: %s — audio quality may suffer",
-                        char_name,
-                        ref_clip,
-                    )
-
-                # ---- Retry loop ----
-                success = False
-                last_error = ""
-                for attempt in range(1, config.max_retries + 1):
-                    try:
-                        text = seg.get("text", "")
-                        text_chunks = chunk_text_qwen(text)
-
-                        gen_start = time.monotonic()
-                        audio_result = _generate_segment_audio(
-                            engine, text_chunks, ref_clip, ref_transcript, seg_type,
-                            character_name=char_name,
-                        )
-                        gen_time = time.monotonic() - gen_start
-
-                        # Apply speech-act post-processing (only when enabled)
-                        if config.speech_act_fx:
-                            speech_act = seg.get("speech_act", "spoken")
-                            if speech_act != "spoken":
-                                adj_audio, _ = apply_speech_act_adjustments(
-                                    audio_result.audio, audio_result.sample_rate, speech_act
-                                )
-                                audio_result = AudioResult(
-                                    audio=adj_audio,
-                                    sample_rate=audio_result.sample_rate,
-                                    duration_s=len(adj_audio) / audio_result.sample_rate,
-                                )
-                                logger.debug(
-                                    "Applied %s adjustments to seg_%04d",
-                                    speech_act, seg_id,
-                                )
-
-                        saved = engine.save_wav_atomic(audio_result, wav_path)
-                        if not saved:
-                            raise RuntimeError("WAV duration below minimum threshold")
-
-                        duration = audio_result.duration_s
-
-                        result = SegmentResult(
-                            segment_id=seg_id,
-                            wav_path=rel_wav_path,
-                            duration_s=duration,
-                            generation_time_s=gen_time,
-                            character_name=char_name,
-                            success=True,
-                            attempts=attempt,
-                        )
-                        mark_completed(cp, seg_id, rel_wav_path, duration, gen_time)
-                        progress.update_segment(result)
-                        completed_count += 1
-                        total_audio_s += duration
-                        success = True
+                for seg in speaker_segs:
+                    if not _run_segment(seg):
+                        threshold_breached = True
                         break
 
-                    except Exception as exc:
-                        last_error = str(exc)
-                        progress.log_failure(
-                            seg_id, last_error, attempt, config.max_retries
-                        )
-
-                        # Memory errors — cleanup before retry
-                        if "MPS" in last_error or "OOM" in last_error.upper() or "Metal" in last_error:
-                            engine.cleanup_memory()
-
-                            # Fatal crash — try restart once
-                            if attempt == config.max_retries and not restarted_once:
-                                progress.log_message(
-                                    f"Attempting {engine.engine_name} restart..."
-                                )
-                                try:
-                                    engine.unload()
-                                    engine.load_model()
-                                    restarted_once = True
-                                    try:
-                                        gen_start = time.monotonic()
-                                        audio_result = _generate_segment_audio(
-                                            engine, text_chunks, ref_clip,
-                                            ref_transcript, seg_type,
-                                            character_name=char_name,
-                                        )
-                                        gen_time = time.monotonic() - gen_start
-
-                                        # Apply speech-act post-processing (only when enabled)
-                                        if config.speech_act_fx:
-                                            speech_act = seg.get("speech_act", "spoken")
-                                            if speech_act != "spoken":
-                                                adj_audio, _ = apply_speech_act_adjustments(
-                                                    audio_result.audio,
-                                                    audio_result.sample_rate,
-                                                    speech_act,
-                                                )
-                                                audio_result = AudioResult(
-                                                    audio=adj_audio,
-                                                    sample_rate=audio_result.sample_rate,
-                                                    duration_s=len(adj_audio) / audio_result.sample_rate,
-                                                )
-
-                                        saved = engine.save_wav_atomic(
-                                            audio_result, wav_path
-                                        )
-                                        if saved:
-                                            duration = audio_result.duration_s
-                                            result = SegmentResult(
-                                                segment_id=seg_id,
-                                                wav_path=rel_wav_path,
-                                                duration_s=duration,
-                                                generation_time_s=gen_time,
-                                                character_name=char_name,
-                                                success=True,
-                                                attempts=attempt + 1,
-                                            )
-                                            mark_completed(
-                                                cp, seg_id, rel_wav_path,
-                                                duration, gen_time,
-                                            )
-                                            progress.update_segment(result)
-                                            completed_count += 1
-                                            total_audio_s += duration
-                                            success = True
-                                            break
-                                    except Exception as restart_exc:
-                                        last_error = str(restart_exc)
-                                        progress.log_message(
-                                            f"Post-restart attempt failed: {last_error}"
-                                        )
-                                except Exception as reload_exc:
-                                    progress.log_message(
-                                        f"Model reload failed: {reload_exc} — exiting cleanly"
-                                    )
-                                    save_checkpoint(cp, book_dir)
-                                    raise
-
-                if not success:
-                    result = SegmentResult(
-                        segment_id=seg_id,
-                        wav_path=rel_wav_path,
-                        duration_s=0.0,
-                        generation_time_s=0.0,
-                        character_name=char_name,
-                        success=False,
-                        error=last_error,
-                        attempts=config.max_retries,
-                    )
-                    mark_failed(cp, seg_id, last_error, config.max_retries)
-                    progress.update_segment(result)
-                    failed_count += 1
-                    failed_segments.append(seg)
-
-                # Save checkpoint after every segment
-                save_checkpoint(cp, book_dir)
-                seg_counter += 1
-
-                # Periodic memory cleanup
-                if seg_counter % config.mlx_cleanup_interval == 0:
-                    engine.cleanup_memory()
-
-                # Check failure threshold
-                total_processed = completed_count + failed_count
-                if (
-                    total_processed >= 20
-                    and failed_count / total_processed > config.failure_threshold
-                ):
-                    progress.log_message(
-                        f"Failure rate {failed_count}/{total_processed} "
-                        f"({failed_count / total_processed:.0%}) exceeds "
-                        f"threshold ({config.failure_threshold:.0%}) — stopping"
-                    )
-                    save_checkpoint(cp, book_dir)
+                if threshold_breached:
                     break
 
-            else:
+                progress.complete_character(speaker, char_idx + 1)
+
+        else:
+            # ---- Chapter-by-chapter path (original) ----
+            for ch_idx, ch_num in enumerate(chapter_numbers):
+                ch_segs = sorted(chapters[ch_num], key=lambda s: s["id"])
+                ch_title = ch_segs[0].get("chapter_title", "") if ch_segs else ""
+                progress.update_chapter(ch_num, ch_title)
+
+                threshold_breached = False
+                for seg in ch_segs:
+                    if not _run_segment(seg):
+                        threshold_breached = True
+                        break
+
+                if threshold_breached:
+                    break
+
                 # Chapter completed without threshold breach
                 progress.complete_chapter(ch_idx + 1)
-                continue
-            # Threshold breach — break outer loop
-            break
 
         # ---- End-of-run retry pass ----
         if failed_segments and failed_count / max(completed_count + failed_count, 1) <= config.failure_threshold:

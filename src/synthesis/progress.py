@@ -122,6 +122,21 @@ class SynthesisProgress:
         """Mark a chapter as fully processed."""
         self._progress.update(self._chapter_task, completed=chapter_num)
 
+    def update_character(self, character: str, total_for_character: int, current_index: int) -> None:
+        """Switch chapter bar to character-mode display for batch-by-character."""
+        self._progress.update(
+            self._chapter_task,
+            description=f"Character: {character}",
+            completed=current_index,
+            total=total_for_character if total_for_character > 0 else 1,
+            info=f"[{total_for_character} segments]",
+        )
+        self._log_write("CHARACTER", f"{character} | {total_for_character} segments")
+
+    def complete_character(self, character: str, completed: int) -> None:
+        """Mark a character batch as fully processed."""
+        self._progress.update(self._chapter_task, completed=completed)
+
     def update_segment(self, result: SegmentResult) -> None:
         """Update segment-level progress after a segment completes."""
         if result.success:
