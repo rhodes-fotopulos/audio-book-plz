@@ -4,7 +4,7 @@
 
 - ✅ **v1.0 MVP** -- Phases 1-6 (shipped 2026-03-04) -- [archive](milestones/v1.0-ROADMAP.md)
 - ✅ **v1.1 Pipeline Quality Improvements** -- Phases 7-10 (shipped 2026-03-04) -- [archive](milestones/v1.1-ROADMAP.md)
-- **v1.2 Voice Expression** -- Phases 11-15 (in progress)
+- **v1.2 Voice Expression** -- Phases 11-13 (in progress)
 
 ## Phases
 
@@ -32,13 +32,11 @@
 
 ### v1.2 Voice Expression
 
-**Milestone Goal:** Wire extracted voice and emotion data into TTS synthesis so each character sounds consistently styled, scenes carry emotional weight, and duplicated voice fields are unified.
+**Milestone Goal:** Unify voice data model, remove unused emotion system, cache LLM matching results, and optimize synthesis performance.
 
 - [x] **Phase 11: Data Model Unification and Voice Matching** - Unified VoiceProfile replaces duplicated fields; matchers consume richer voice data (completed 2026-03-07)
-- [ ] **Phase 12: Expression System Core** - Three-layer expression resolver produces concrete audio parameters from emotion data
-- [ ] **Phase 13: Synthesis Wiring and Post-Processing** - Expression system connected to synthesis loop with pitch shifting and feature flag
-- [ ] **Phase 14: Synthesis Performance** - Reference caching and batch-by-character ordering for faster synthesis runs
-- [ ] **Phase 15: Experimental Expression and Preview** - Text-cue injection experiment and A/B preview tooling
+- [ ] **Phase 12: Emotion Removal and LLM Optimization** - Pipeline simplified by removing unused emotion system; speech-act post-processing and LLM refinement made opt-in; trait matcher results cached
+- [ ] **Phase 13: Synthesis Performance** - Reference caching and batch-by-character ordering for faster synthesis runs
 
 ## Phase Details
 
@@ -57,35 +55,25 @@ Plans:
 - [ ] 11-01-PLAN.md -- VoiceProfile model, extraction prompt, and merger redesign
 - [ ] 11-02-PLAN.md -- Matcher updates and test fixture migration
 
-### Phase 12: Expression System Core
-**Goal**: Emotion data from attribution phase resolves into concrete, conflict-free audio parameters
+### Phase 12: Emotion Removal and LLM Optimization
+**Goal**: Pipeline simplified by removing unused emotion system; speech-act post-processing and LLM refinement made opt-in; trait matcher results cached
 **Depends on**: Phase 11
-**Requirements**: EXPR-01, EXPR-02, EXPR-03
+**Requirements**: EXPR-01 (superseded), EXPR-02 (superseded), EXPR-03 (superseded)
 **Success Criteria** (what must be TRUE):
-  1. Given a character baseline, scene mood, and line-level override, the resolver produces a single ExpressionParams with volume, speed, and pitch deltas
-  2. Emotion categories (angry, sad, joyful, fearful, etc.) map to distinct parameter profiles with intensity scaling
-  3. When a speech-act adjustment (e.g., whispered) conflicts with an emotion override, the precedence rules produce a deterministic, sensible result
-  4. Neutral/missing emotion data produces identity parameters (no audio modification)
+  1. Emotion module removed from codebase (Base model cannot combine voice cloning with emotion instructions)
+  2. Speech-act post-processing available via --speech-act-fx flag (default OFF)
+  3. LLM refinement available via --refine-llm flag (default OFF)
+  4. Trait matcher caches LLM results and skips LLM on re-runs with unchanged inputs
+  5. ROADMAP and REQUIREMENTS reflect 3-phase structure (11-13)
 **Plans:** 2 plans
 
 Plans:
 - [ ] 12-01-PLAN.md -- Emotion removal and speech-act flags
 - [ ] 12-02-PLAN.md -- Trait matcher caching and doc updates
 
-### Phase 13: Synthesis Wiring and Post-Processing
-**Goal**: Running synthesis with --expression produces audibly different output driven by scene mood and line emotion
-**Depends on**: Phase 12
-**Requirements**: SYNTH-01, SYNTH-02, SYNTH-03, SYNTH-04
-**Success Criteria** (what must be TRUE):
-  1. The synthesis loop loads emotion.json and characters.json, and logs which expression parameters are applied per segment
-  2. A segment in an angry scene sounds audibly different from the same text in a calm scene (volume, speed, pitch differ)
-  3. Pitch shifting via pedalboard applies as a third post-processing dimension alongside volume and speed
-  4. Running without --expression flag (or without emotion.json) produces identical output to v1.1 (graceful fallback)
-**Plans**: TBD
-
-### Phase 14: Synthesis Performance
+### Phase 13: Synthesis Performance
 **Goal**: Synthesis runs faster by caching voice references and enabling per-character batch ordering
-**Depends on**: Phase 13
+**Depends on**: Phase 12
 **Requirements**: SYNTH-05, SYNTH-06
 **Success Criteria** (what must be TRUE):
   1. Voice reference encoding is computed once per character and reused across all that character's segments (visible in logs, measurable time reduction)
@@ -93,21 +81,10 @@ Plans:
   3. Final audiobook output is identical regardless of whether --batch-by-character is used (ordering is a synthesis optimization, not an output change)
 **Plans**: TBD
 
-### Phase 15: Experimental Expression and Preview
-**Goal**: Users can experiment with text-cue injection and preview expression effects before committing to full synthesis
-**Depends on**: Phase 13
-**Requirements**: CUE-01, CUE-02, PREV-01
-**Success Criteria** (what must be TRUE):
-  1. With text-cue injection enabled, emotion cues are prepended to segment text before TTS and do not appear as spoken words in the output
-  2. Text-cue injection can be enabled/disabled independently of post-processing expression via its own feature flag
-  3. Running --preview-segment N generates two audio files (with and without expression) for side-by-side comparison
-**Plans**: TBD
-
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 11 -> 12 -> 13 -> 14 -> 15
-Note: Phase 14 and 15 both depend on Phase 13 and could execute in either order.
+Phases execute in numeric order: 11 -> 12 -> 13
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -122,11 +99,9 @@ Note: Phase 14 and 15 both depend on Phase 13 and could execute in either order.
 | 9. Production Polish | v1.1 | 3/3 | Complete | 2026-03-04 |
 | 10. Verification & CLI Wiring Fixes | v1.1 | 3/3 | Complete | 2026-03-04 |
 | 11. Data Model Unification and Voice Matching | v1.2 | 2/2 | Complete | 2026-03-07 |
-| 12. Expression System Core | v1.2 | 0/2 | Not started | - |
-| 13. Synthesis Wiring and Post-Processing | v1.2 | 0/? | Not started | - |
-| 14. Synthesis Performance | v1.2 | 0/? | Not started | - |
-| 15. Experimental Expression and Preview | v1.2 | 0/? | Not started | - |
+| 12. Emotion Removal and LLM Optimization | v1.2 | 0/2 | Not started | - |
+| 13. Synthesis Performance | v1.2 | 0/? | Not started | - |
 
 ---
 *Roadmap created: 2026-03-03*
-*Last updated: 2026-03-06 -- Phase 12 plans created*
+*Last updated: 2026-03-07 -- Milestone restructured from 5 phases to 3 (11-13), removed dropped phases*

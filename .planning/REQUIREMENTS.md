@@ -19,27 +19,27 @@ Requirements for v1.2 Voice Expression milestone. Each maps to roadmap phases.
 
 ### Expression System
 
-- [ ] **EXPR-01**: Expression resolver combines three layers (character baseline + scene mood + line override) into single ExpressionParams
-- [ ] **EXPR-02**: Emotion-category parameter tables map mood types to volume/speed/pitch deltas with intensity scaling
-- [ ] **EXPR-03**: Clear precedence rules resolve conflicts between speech-act adjustments and emotion conditioning
+- [x] **EXPR-01**: ~~Expression resolver combines three layers (character baseline + scene mood + line override) into single ExpressionParams~~ SUPERSEDED -- Emotion system removed (Base model cannot combine voice cloning with emotion instructions). Replaced by emotion module deletion.
+- [x] **EXPR-02**: ~~Emotion-category parameter tables map mood types to volume/speed/pitch deltas with intensity scaling~~ SUPERSEDED -- Emotion parameter tables not needed. Replaced by speech-act post-processing flag (--speech-act-fx, default OFF).
+- [x] **EXPR-03**: ~~Clear precedence rules resolve conflicts between speech-act adjustments and emotion conditioning~~ SUPERSEDED -- Only speech-act layer remains (no emotion conflict to resolve). Replaced by optional speech-act LLM refinement + trait matcher caching.
 
 ### Synthesis Wiring
 
-- [ ] **SYNTH-01**: Synthesis loop loads emotion.json and characters.json, builds per-segment lookups
-- [ ] **SYNTH-02**: Expression resolver called per segment, results applied via extended post-processor
-- [ ] **SYNTH-03**: Pitch shifting applied via pedalboard PitchShift as third post-processing dimension
-- [ ] **SYNTH-04**: `--expression` flag enables/disables emotion conditioning with graceful fallback when emotion.json missing
+- [x] **SYNTH-01**: ~~Synthesis loop loads emotion.json and characters.json, builds per-segment lookups~~ DROPPED -- No emotion data to wire into synthesis.
+- [x] **SYNTH-02**: ~~Expression resolver called per segment, results applied via extended post-processor~~ DROPPED -- No emotion data to wire into synthesis.
+- [x] **SYNTH-03**: ~~Pitch shifting applied via pedalboard PitchShift as third post-processing dimension~~ DROPPED -- No emotion data to wire into synthesis.
+- [x] **SYNTH-04**: ~~`--expression` flag enables/disables emotion conditioning with graceful fallback when emotion.json missing~~ DROPPED -- No emotion data to wire into synthesis.
 - [ ] **SYNTH-05**: Precomputed reference encoding cached per character, reused across all segments for that character
 - [ ] **SYNTH-06**: `--batch-by-character` flag for per-character synthesis ordering with post-hoc chapter stitching
 
 ### Text-Cue Injection
 
-- [ ] **CUE-01**: Emotion-to-text-cue injection prepends natural-language cues to segment text before TTS
-- [ ] **CUE-02**: Feature flag to enable/disable text-cue injection independently of post-processing expression
+- [x] **CUE-01**: ~~Emotion-to-text-cue injection prepends natural-language cues to segment text before TTS~~ DROPPED -- Text-cue injection doesn't work with Base model.
+- [x] **CUE-02**: ~~Feature flag to enable/disable text-cue injection independently of post-processing expression~~ DROPPED -- Text-cue injection doesn't work with Base model.
 
 ### Preview
 
-- [ ] **PREV-01**: `--preview-segment N` flag generates A/B comparison of segment with and without expression
+- [x] **PREV-01**: ~~`--preview-segment N` flag generates A/B comparison of segment with and without expression~~ DROPPED -- A/B preview has less value without expression system.
 
 ## Future Requirements
 
@@ -71,24 +71,26 @@ Which phases cover which requirements. Updated during roadmap creation.
 | MODEL-02 | Phase 11 | Complete |
 | MATCH-01 | Phase 11 | Complete |
 | MATCH-02 | Phase 11 | Complete |
-| EXPR-01 | Phase 12 | Pending |
-| EXPR-02 | Phase 12 | Pending |
-| EXPR-03 | Phase 12 | Pending |
-| SYNTH-01 | Phase 13 | Pending |
-| SYNTH-02 | Phase 13 | Pending |
-| SYNTH-03 | Phase 13 | Pending |
-| SYNTH-04 | Phase 13 | Pending |
-| SYNTH-05 | Phase 14 | Pending |
-| SYNTH-06 | Phase 14 | Pending |
-| CUE-01 | Phase 15 | Pending |
-| CUE-02 | Phase 15 | Pending |
-| PREV-01 | Phase 15 | Pending |
+| EXPR-01 | Phase 12 | SUPERSEDED |
+| EXPR-02 | Phase 12 | SUPERSEDED |
+| EXPR-03 | Phase 12 | SUPERSEDED |
+| SYNTH-01 | Phase 13 (removed) | DROPPED |
+| SYNTH-02 | Phase 13 (removed) | DROPPED |
+| SYNTH-03 | Phase 13 (removed) | DROPPED |
+| SYNTH-04 | Phase 13 (removed) | DROPPED |
+| SYNTH-05 | Phase 13 | Pending |
+| SYNTH-06 | Phase 13 | Pending |
+| CUE-01 | Phase 15 (removed) | DROPPED |
+| CUE-02 | Phase 15 (removed) | DROPPED |
+| PREV-01 | Phase 15 (removed) | DROPPED |
 
 **Coverage:**
 - v1.2 requirements: 16 total
-- Mapped to phases: 16
-- Unmapped: 0
+- Complete: 4 (MODEL-01, MODEL-02, MATCH-01, MATCH-02)
+- Superseded: 3 (EXPR-01, EXPR-02, EXPR-03)
+- Dropped: 7 (SYNTH-01 through SYNTH-04, CUE-01, CUE-02, PREV-01)
+- Remaining: 2 (SYNTH-05, SYNTH-06 in Phase 13)
 
 ---
 *Requirements defined: 2026-03-06*
-*Last updated: 2026-03-06 after roadmap creation*
+*Last updated: 2026-03-07 -- EXPR requirements superseded, SYNTH-01..04/CUE/PREV dropped after milestone restructure*
