@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import importlib.metadata
 import logging
+from typing import Any
 
 from src.synthesis.engine_base import AudioResult, TTSEngineBase
 from src.synthesis.models import SynthesisConfig
@@ -42,6 +43,8 @@ class QwenTTSEngine(TTSEngineBase):
         super().__init__(config)
         self.model = None
         self._sample_rate: int | None = None
+        self._ref_cache: dict[str, Any] = {}
+        self._encode_cache: dict[int, Any] | None = None
 
     # ------------------------------------------------------------------
     # Model loading
@@ -72,6 +75,20 @@ class QwenTTSEngine(TTSEngineBase):
             )
             self._sample_rate = 24000
 
+        # Wrap speech_tokenizer.encode with identity-based cache
+        if hasattr(self.model, "speech_tokenizer") and hasattr(self.model.speech_tokenizer, "encode"):
+            original_encode = self.model.speech_tokenizer.encode
+            encode_cache: dict[int, Any] = {}
+
+            def cached_encode(audio: Any) -> Any:
+                key = id(audio)
+                if key not in encode_cache:
+                    encode_cache[key] = original_encode(audio)
+                return encode_cache[key]
+
+            self.model.speech_tokenizer.encode = cached_encode
+            self._encode_cache = encode_cache
+
         logger.info(
             "Qwen3-TTS 1.7B loaded on MLX Metal (sample rate: %d Hz)",
             self._sample_rate,
@@ -87,6 +104,8 @@ class QwenTTSEngine(TTSEngineBase):
         ref_clip_path: str,
         ref_transcript: str | None = None,
         segment_type: str = "narration",
+        *,
+        character_name: str | None = None,
     ) -> AudioResult:
         """Generate audio for *text* using the reference voice clip.
 
@@ -97,6 +116,9 @@ class QwenTTSEngine(TTSEngineBase):
                 this significantly improves voice cloning quality.
             segment_type: ``'narration'`` or ``'dialogue'`` (currently
                 unused by Qwen3-TTS Base model).
+            character_name: Character name for reference audio caching.
+                When provided, the reference audio is loaded once and
+                reused for all segments of the same character.
 
         Returns:
             ``AudioResult`` with numpy audio data.
@@ -111,10 +133,22 @@ class QwenTTSEngine(TTSEngineBase):
                 "No transcript provided for voice cloning — quality may be reduced"
             )
 
+        # Two-layer cache: Layer 1 — load_audio cache
+        cache_key = character_name or ref_clip_path
+        if cache_key in self._ref_cache:
+            ref_audio_data = self._ref_cache[cache_key]
+            logger.debug("Using cached reference for %s", cache_key)
+        else:
+            from mlx_audio.utils import load_audio
+
+            ref_audio_data = load_audio(ref_clip_path, sample_rate=self._sample_rate)
+            self._ref_cache[cache_key] = ref_audio_data
+            logger.info("Cached reference encoding for %s", cache_key)
+
         results = list(
             self.model.generate(
                 text=text,
-                ref_audio=ref_clip_path,
+                ref_audio=ref_audio_data,
                 ref_text=ref_transcript,
             )
         )
@@ -154,6 +188,9 @@ class QwenTTSEngine(TTSEngineBase):
 
     def unload(self) -> None:
         """Release the Qwen3-TTS model and free Metal memory."""
+        self._ref_cache.clear()
+        if self._encode_cache is not None:
+            self._encode_cache.clear()
         self.model = None
         self.cleanup_memory()
         logger.info("Qwen3-TTS model unloaded")

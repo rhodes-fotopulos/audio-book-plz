@@ -49,6 +49,7 @@ def _generate_segment_audio(
     ref_clip: str,
     ref_transcript: str | None,
     seg_type: str,
+    character_name: str | None = None,
 ) -> AudioResult:
     """Generate audio for one or more text chunks and concatenate.
 
@@ -56,7 +57,8 @@ def _generate_segment_audio(
     """
     if len(text_chunks) == 1:
         return engine.generate(
-            text_chunks[0], ref_clip, ref_transcript, seg_type
+            text_chunks[0], ref_clip, ref_transcript, seg_type,
+            character_name=character_name,
         )
 
     # Generate each chunk and concatenate numpy arrays
@@ -65,7 +67,10 @@ def _generate_segment_audio(
     total_duration = 0.0
 
     for chunk in text_chunks:
-        result = engine.generate(chunk, ref_clip, ref_transcript, seg_type)
+        result = engine.generate(
+            chunk, ref_clip, ref_transcript, seg_type,
+            character_name=character_name,
+        )
         parts.append(result.audio)
         sample_rate = result.sample_rate
         total_duration += result.duration_s
@@ -286,7 +291,8 @@ def run_synthesis(
 
                         gen_start = time.monotonic()
                         audio_result = _generate_segment_audio(
-                            engine, text_chunks, ref_clip, ref_transcript, seg_type
+                            engine, text_chunks, ref_clip, ref_transcript, seg_type,
+                            character_name=char_name,
                         )
                         gen_time = time.monotonic() - gen_start
 
@@ -353,6 +359,7 @@ def run_synthesis(
                                         audio_result = _generate_segment_audio(
                                             engine, text_chunks, ref_clip,
                                             ref_transcript, seg_type,
+                                            character_name=char_name,
                                         )
                                         gen_time = time.monotonic() - gen_start
 
@@ -472,8 +479,10 @@ def run_synthesis(
                     text_chunks = chunk_text_qwen(text)
                     gen_start = time.monotonic()
 
+                    char_name_retry = speaker
                     audio_result = _generate_segment_audio(
-                        engine, text_chunks, ref_clip, ref_transcript, seg_type
+                        engine, text_chunks, ref_clip, ref_transcript, seg_type,
+                        character_name=char_name_retry,
                     )
                     gen_time = time.monotonic() - gen_start
 

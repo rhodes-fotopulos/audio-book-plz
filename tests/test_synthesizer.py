@@ -412,7 +412,7 @@ def test_reference_cache_reuses_encoding():
 
     mock_load_audio = MagicMock(return_value=MagicMock())  # fake mx.array
 
-    with patch("src.synthesis.qwen_engine.load_audio", mock_load_audio, create=True):
+    with patch("mlx_audio.utils.load_audio", mock_load_audio):
         with patch("numpy.array", return_value=np.zeros(24000, dtype=np.float32)):
             engine.generate("Hello", "ref.wav", character_name="Alice")
             engine.generate("World", "ref.wav", character_name="Alice")
@@ -444,7 +444,7 @@ def test_reference_cache_log_messages(caplog):
     mock_load_audio = MagicMock(return_value=MagicMock())
 
     with caplog.at_level(logging.DEBUG, logger="src.synthesis.qwen_engine"):
-        with patch("src.synthesis.qwen_engine.load_audio", mock_load_audio, create=True):
+        with patch("mlx_audio.utils.load_audio", mock_load_audio):
             with patch("numpy.array", return_value=np.zeros(24000, dtype=np.float32)):
                 engine.generate("Hello", "ref.wav", character_name="Bob")
                 engine.generate("World", "ref.wav", character_name="Bob")
@@ -479,7 +479,7 @@ def test_reference_cache_different_characters():
 
     mock_load_audio = MagicMock(return_value=MagicMock())
 
-    with patch("src.synthesis.qwen_engine.load_audio", mock_load_audio, create=True):
+    with patch("mlx_audio.utils.load_audio", mock_load_audio):
         with patch("numpy.array", return_value=np.zeros(24000, dtype=np.float32)):
             engine.generate("Hello", "ref_alice.wav", character_name="Alice")
             engine.generate("World", "ref_bob.wav", character_name="Bob")
