@@ -66,7 +66,11 @@ Plans:
   2. Emotion categories (angry, sad, joyful, fearful, etc.) map to distinct parameter profiles with intensity scaling
   3. When a speech-act adjustment (e.g., whispered) conflicts with an emotion override, the precedence rules produce a deterministic, sensible result
   4. Neutral/missing emotion data produces identity parameters (no audio modification)
-**Plans**: TBD
+**Plans:** 2 plans
+
+Plans:
+- [ ] 12-01-PLAN.md -- Emotion removal and speech-act flags
+- [ ] 12-02-PLAN.md -- Trait matcher caching and doc updates
 
 ### Phase 13: Synthesis Wiring and Post-Processing
 **Goal**: Running synthesis with --expression produces audibly different output driven by scene mood and line emotion
@@ -117,12 +121,12 @@ Note: Phase 14 and 15 both depend on Phase 13 and could execute in either order.
 | 8. LLM Intelligence and Emotion | v1.1 | 3/3 | Complete | 2026-03-04 |
 | 9. Production Polish | v1.1 | 3/3 | Complete | 2026-03-04 |
 | 10. Verification & CLI Wiring Fixes | v1.1 | 3/3 | Complete | 2026-03-04 |
-| 11. Data Model Unification and Voice Matching | 2/2 | Complete    | 2026-03-07 | - |
-| 12. Expression System Core | v1.2 | 0/? | Not started | - |
+| 11. Data Model Unification and Voice Matching | v1.2 | 2/2 | Complete | 2026-03-07 |
+| 12. Expression System Core | v1.2 | 0/2 | Not started | - |
 | 13. Synthesis Wiring and Post-Processing | v1.2 | 0/? | Not started | - |
 | 14. Synthesis Performance | v1.2 | 0/? | Not started | - |
 | 15. Experimental Expression and Preview | v1.2 | 0/? | Not started | - |
 
 ---
 *Roadmap created: 2026-03-03*
-*Last updated: 2026-03-06 -- Phase 11 plans created*
+*Last updated: 2026-03-06 -- Phase 12 plans created*
