@@ -51,7 +51,11 @@
   2. Existing characters.json files from v1.1 load without errors or re-extraction (backward compatibility)
   3. Voice matching produces speaker assignments using the richer unified profile data (visible in matching logs)
   4. No regression in speaker selection quality compared to v1.1 output
-**Plans**: TBD
+**Plans:** 2 plans
+
+Plans:
+- [ ] 11-01-PLAN.md -- VoiceProfile model, extraction prompt, and merger redesign
+- [ ] 11-02-PLAN.md -- Matcher updates and test fixture migration
 
 ### Phase 12: Expression System Core
 **Goal**: Emotion data from attribution phase resolves into concrete, conflict-free audio parameters
@@ -113,7 +117,7 @@ Note: Phase 14 and 15 both depend on Phase 13 and could execute in either order.
 | 8. LLM Intelligence and Emotion | v1.1 | 3/3 | Complete | 2026-03-04 |
 | 9. Production Polish | v1.1 | 3/3 | Complete | 2026-03-04 |
 | 10. Verification & CLI Wiring Fixes | v1.1 | 3/3 | Complete | 2026-03-04 |
-| 11. Data Model Unification and Voice Matching | v1.2 | 0/? | Not started | - |
+| 11. Data Model Unification and Voice Matching | v1.2 | 0/2 | Not started | - |
 | 12. Expression System Core | v1.2 | 0/? | Not started | - |
 | 13. Synthesis Wiring and Post-Processing | v1.2 | 0/? | Not started | - |
 | 14. Synthesis Performance | v1.2 | 0/? | Not started | - |
@@ -121,4 +125,4 @@ Note: Phase 14 and 15 both depend on Phase 13 and could execute in either order.
 
 ---
 *Roadmap created: 2026-03-03*
-*Last updated: 2026-03-06 -- v1.2 milestone roadmap created*
+*Last updated: 2026-03-06 -- Phase 11 plans created*
