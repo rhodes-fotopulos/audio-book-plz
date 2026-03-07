@@ -351,3 +351,159 @@ def test_engine_checkpoint_compatibility(mock_create_engine, tmp_path):
     # Archive directory should exist
     archive_dir = book_dir / "checkpoint_archive"
     assert archive_dir.exists()
+
+
+# ---------------------------------------------------------------------------
+# Reference cache tests
+# ---------------------------------------------------------------------------
+
+
+@patch("src.synthesis.synthesizer.create_engine")
+def test_character_name_passed_to_engine(mock_create_engine, tmp_path):
+    """Synthesizer passes character_name kwarg to engine.generate()."""
+    from src.matching.models import VoiceMap
+    from src.synthesis.synthesizer import run_synthesis
+
+    book_dir = tmp_path / "book"
+    book_dir.mkdir()
+    _make_voice_map(book_dir)
+
+    segments = _make_segments(chapters=1, per_chapter=2)
+    config = SynthesisConfig(device="cpu")
+
+    engine = _mock_engine()
+    mock_create_engine.return_value = engine
+
+    vm_path = book_dir / "voice_map.json"
+    vm = VoiceMap.model_validate_json(vm_path.read_text())
+
+    run_synthesis(book_dir, vm, segments, config, verbose=False)
+
+    # Every engine.generate call should include character_name kwarg
+    for call in engine.generate.call_args_list:
+        assert "character_name" in call.kwargs, (
+            f"character_name missing from engine.generate call: {call}"
+        )
+
+
+def test_reference_cache_reuses_encoding():
+    """When generate() is called with the same character_name, ref audio is loaded once."""
+    from unittest.mock import MagicMock, patch
+
+    # Build a QwenTTSEngine with mocked internals
+    with patch("src.synthesis.qwen_engine.logger"):
+        from src.synthesis.qwen_engine import QwenTTSEngine
+
+    config = SynthesisConfig(device="cpu")
+    engine = QwenTTSEngine(config)
+
+    # Mock model and load_audio
+    mock_model = MagicMock()
+    mock_result = MagicMock()
+    mock_result.audio = MagicMock()  # stands in for mx.array
+
+    # Make model.generate return iterable with result
+    mock_model.generate.return_value = [mock_result]
+    mock_model.sample_rate = 24000
+
+    engine.model = mock_model
+    engine._sample_rate = 24000
+    engine._ref_cache = {}
+
+    mock_load_audio = MagicMock(return_value=MagicMock())  # fake mx.array
+
+    with patch("src.synthesis.qwen_engine.load_audio", mock_load_audio, create=True):
+        with patch("numpy.array", return_value=np.zeros(24000, dtype=np.float32)):
+            engine.generate("Hello", "ref.wav", character_name="Alice")
+            engine.generate("World", "ref.wav", character_name="Alice")
+
+    # load_audio should be called exactly once (cached on second call)
+    assert mock_load_audio.call_count == 1
+
+
+def test_reference_cache_log_messages(caplog):
+    """First call logs 'Cached reference encoding', subsequent logs 'Using cached reference'."""
+    import logging
+    from unittest.mock import MagicMock, patch
+
+    from src.synthesis.qwen_engine import QwenTTSEngine
+
+    config = SynthesisConfig(device="cpu")
+    engine = QwenTTSEngine(config)
+
+    mock_model = MagicMock()
+    mock_result = MagicMock()
+    mock_result.audio = MagicMock()
+    mock_model.generate.return_value = [mock_result]
+    mock_model.sample_rate = 24000
+
+    engine.model = mock_model
+    engine._sample_rate = 24000
+    engine._ref_cache = {}
+
+    mock_load_audio = MagicMock(return_value=MagicMock())
+
+    with caplog.at_level(logging.DEBUG, logger="src.synthesis.qwen_engine"):
+        with patch("src.synthesis.qwen_engine.load_audio", mock_load_audio, create=True):
+            with patch("numpy.array", return_value=np.zeros(24000, dtype=np.float32)):
+                engine.generate("Hello", "ref.wav", character_name="Bob")
+                engine.generate("World", "ref.wav", character_name="Bob")
+
+    messages = [r.message for r in caplog.records]
+    assert any("Cached reference encoding for Bob" in m for m in messages), (
+        f"Expected 'Cached reference encoding for Bob' in logs: {messages}"
+    )
+    assert any("Using cached reference for Bob" in m for m in messages), (
+        f"Expected 'Using cached reference for Bob' in logs: {messages}"
+    )
+
+
+def test_reference_cache_different_characters():
+    """Two different characters each get their own cached reference."""
+    from unittest.mock import MagicMock, patch
+
+    from src.synthesis.qwen_engine import QwenTTSEngine
+
+    config = SynthesisConfig(device="cpu")
+    engine = QwenTTSEngine(config)
+
+    mock_model = MagicMock()
+    mock_result = MagicMock()
+    mock_result.audio = MagicMock()
+    mock_model.generate.return_value = [mock_result]
+    mock_model.sample_rate = 24000
+
+    engine.model = mock_model
+    engine._sample_rate = 24000
+    engine._ref_cache = {}
+
+    mock_load_audio = MagicMock(return_value=MagicMock())
+
+    with patch("src.synthesis.qwen_engine.load_audio", mock_load_audio, create=True):
+        with patch("numpy.array", return_value=np.zeros(24000, dtype=np.float32)):
+            engine.generate("Hello", "ref_alice.wav", character_name="Alice")
+            engine.generate("World", "ref_bob.wav", character_name="Bob")
+
+    # load_audio should be called twice (once per character)
+    assert mock_load_audio.call_count == 2
+    assert "Alice" in engine._ref_cache
+    assert "Bob" in engine._ref_cache
+
+
+def test_reference_cache_cleared_on_unload():
+    """After engine.unload(), the reference cache is empty."""
+    from unittest.mock import MagicMock, patch
+
+    from src.synthesis.qwen_engine import QwenTTSEngine
+
+    config = SynthesisConfig(device="cpu")
+    engine = QwenTTSEngine(config)
+
+    # Simulate populated cache
+    engine._ref_cache = {"Alice": "fake_audio", "Bob": "fake_audio"}
+    engine.model = MagicMock()
+
+    with patch.object(engine, "cleanup_memory"):
+        engine.unload()
+
+    assert engine._ref_cache == {}
