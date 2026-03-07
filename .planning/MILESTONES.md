@@ -1,5 +1,25 @@
 # Milestones
 
+## v1.2 Voice Expression (Shipped: 2026-03-07)
+
+**Phases completed:** 3 phases, 6 plans, 13 tasks
+**Lines of code:** 14,943 Python (total project, ~300 net added in v1.2)
+**Timeline:** 1 day (2026-03-07)
+
+**Delivered:** Unified the voice data model, removed the incompatible emotion system, added LLM result caching for voice matching, and optimized synthesis with per-character reference caching and batch-by-character ordering.
+
+**Key accomplishments:**
+1. Unified VoiceProfile model (9 fields) replacing duplicated VoiceQualities + VoiceBaseline across extraction, merging, and matching
+2. Voice matchers consume richer profile data -- trait_matcher gets full 9-field casting, embedding_matcher stays coarse-only for LibriTTS-P alignment
+3. Emotion system fully removed from codebase -- pipeline simplified with no dead code
+4. Speech-act post-processing and LLM refinement made opt-in via --speech-act-fx and --refine-llm flags
+5. Trait matcher LLM result caching with smart invalidation (profile + candidate pool keying)
+6. Per-character voice reference caching (two-layer: load_audio + encode) and --batch-by-character synthesis ordering
+
+**Milestone restructure:** Originally planned as 5 phases (11-15) with emotion expression system. After discovering Qwen3-TTS Base model cannot combine voice cloning with emotion instructions, restructured to 3 focused phases (11-13). 7 requirements dropped, 3 superseded.
+
+---
+
 ## v1.0 MVP (Shipped: 2026-03-04)
 
 **Phases completed:** 6 phases, 17 plans
