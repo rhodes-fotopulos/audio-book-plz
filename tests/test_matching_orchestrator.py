@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.attribution.models import CharacterProfile, VoiceQualities
+from src.attribution.models import CharacterProfile, VoiceProfile
 from src.matching.models import CastClassification, SpeakerAnnotation, VoiceAssignment, VoiceMap
 from src.matching.orchestrator import run_matching
 
@@ -37,9 +37,12 @@ def tmp_book_dir(tmp_path) -> Path:
             "aliases": [],
             "gender": "female",
             "age_range": "young adult",
-            "voice_qualities": {"pitch": "high", "pace": "fast", "tone": "cheerful", "accent": "unknown"},
+            "voice_profile": {
+                "pitch": "high", "pace": "fast", "tone": "cheerful", "accent": "unknown",
+                "pace_style": "unknown", "tone_style": "unknown", "energy": "unknown",
+                "typical_emotion": "unknown", "description": "unknown",
+            },
             "personality_traits": ["curious", "brave"],
-            "relationships": [],
             "description": "A curious young woman",
             "is_named": True,
         },
@@ -48,9 +51,12 @@ def tmp_book_dir(tmp_path) -> Path:
             "aliases": [],
             "gender": "male",
             "age_range": "middle-aged",
-            "voice_qualities": {"pitch": "low", "pace": "slow", "tone": "gruff", "accent": "unknown"},
+            "voice_profile": {
+                "pitch": "low", "pace": "slow", "tone": "gruff", "accent": "unknown",
+                "pace_style": "unknown", "tone_style": "unknown", "energy": "unknown",
+                "typical_emotion": "unknown", "description": "unknown",
+            },
             "personality_traits": ["stern", "wise"],
-            "relationships": [],
             "description": "A stern older man",
             "is_named": True,
         },

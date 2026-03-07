@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.attribution.models import CharacterProfile, VoiceQualities
+from src.attribution.models import CharacterProfile, VoiceProfile
 from src.matching.models import SpeakerAnnotation
 from src.matching.embedding_matcher import (
     build_speaker_embeddings,
@@ -75,11 +75,13 @@ def male_character() -> CharacterProfile:
         aliases=[],
         gender="male",
         age_range="elderly",
-        voice_qualities=VoiceQualities(
-            pitch="low", pace="slow", tone="gruff", accent="unknown"
+        voice_profile=VoiceProfile(
+            pitch="low", pace="slow", tone="gruff", accent="unknown",
+            pace_style="deliberate", tone_style="rough", energy="restrained",
+            typical_emotion="stern",
+            description="A gruff commanding voice",
         ),
         personality_traits=["authoritative", "stern"],
-        relationships=[],
         description="A gruff old military commander",
         is_named=True,
     )
@@ -92,11 +94,13 @@ def female_character() -> CharacterProfile:
         aliases=[],
         gender="female",
         age_range="young adult",
-        voice_qualities=VoiceQualities(
-            pitch="high", pace="fast", tone="cheerful", accent="unknown"
+        voice_profile=VoiceProfile(
+            pitch="high", pace="fast", tone="cheerful", accent="unknown",
+            pace_style="quick", tone_style="bright", energy="animated",
+            typical_emotion="cheerful",
+            description="A lively cheerful voice",
         ),
         personality_traits=["lively", "energetic"],
-        relationships=[],
         description="A young lively woman",
         is_named=True,
     )

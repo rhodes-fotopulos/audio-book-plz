@@ -14,7 +14,7 @@ from unittest.mock import patch
 
 import pytest
 
-from src.attribution.models import CharacterProfile, VoiceQualities
+from src.attribution.models import CharacterProfile, VoiceProfile
 from src.matching.models import SpeakerAnnotation
 from src.matching.trait_matcher import (
     MatchResponse,
@@ -37,11 +37,13 @@ def sample_character() -> CharacterProfile:
         aliases=["Darcy", "Fitzwilliam"],
         gender="male",
         age_range="young adult",
-        voice_qualities=VoiceQualities(
-            pitch="low", pace="moderate", tone="reserved", accent="British"
+        voice_profile=VoiceProfile(
+            pitch="low", pace="moderate", tone="reserved", accent="British",
+            pace_style="measured", tone_style="deep", energy="restrained",
+            typical_emotion="sardonic",
+            description="A deep reserved voice with aristocratic bearing",
         ),
         personality_traits=["proud", "intelligent", "reserved"],
-        relationships=[],
         description="A wealthy gentleman of reserved demeanor",
         is_named=True,
     )
@@ -82,9 +84,13 @@ def sample_characters() -> list[CharacterProfile]:
             aliases=[],
             gender="male",
             age_range="young adult",
-            voice_qualities=VoiceQualities(pitch="low", pace="moderate", tone="reserved", accent="British"),
+            voice_profile=VoiceProfile(
+                pitch="low", pace="moderate", tone="reserved", accent="British",
+                pace_style="measured", tone_style="deep", energy="restrained",
+                typical_emotion="sardonic",
+                description="A deep reserved voice with aristocratic bearing",
+            ),
             personality_traits=["proud"],
-            relationships=[],
             description="Wealthy gentleman",
             is_named=True,
         ),
@@ -93,9 +99,12 @@ def sample_characters() -> list[CharacterProfile]:
             aliases=[],
             gender="female",
             age_range="young adult",
-            voice_qualities=VoiceQualities(pitch="medium", pace="fast", tone="witty", accent="unknown"),
+            voice_profile=VoiceProfile(
+                pitch="medium", pace="fast", tone="witty", accent="unknown",
+                pace_style="unknown", tone_style="unknown", energy="unknown",
+                typical_emotion="unknown", description="unknown",
+            ),
             personality_traits=["witty"],
-            relationships=[],
             description="Spirited young woman",
             is_named=True,
         ),
