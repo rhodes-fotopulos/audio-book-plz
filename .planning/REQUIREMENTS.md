@@ -56,10 +56,10 @@ Requirements for v1.2 Voice Expression milestone. Each maps to roadmap phases.
 
 | Feature | Reason |
 |---------|--------|
-| VoiceDesign model integration | Loses real human voice cloning — core value. Defer to future if post-processing proves insufficient. |
+| VoiceDesign model integration | Loses real human voice cloning -- core value. Defer to future if post-processing proves insufficient. |
 | Per-word emphasis marking | No mechanism in Base model for word-level control |
 | CustomVoice model (9 preset speakers) | Loses arbitrary voice cloning from LibriTTS-R |
-| Instruct parameter on Base model | Base model does not support instruct — verified via official docs and source code |
+| Instruct parameter on Base model | Base model does not support instruct -- verified via official docs and source code |
 
 ## Traceability
 
@@ -67,28 +67,28 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| MODEL-01 | — | Pending |
-| MODEL-02 | — | Pending |
-| MATCH-01 | — | Pending |
-| MATCH-02 | — | Pending |
-| EXPR-01 | — | Pending |
-| EXPR-02 | — | Pending |
-| EXPR-03 | — | Pending |
-| SYNTH-01 | — | Pending |
-| SYNTH-02 | — | Pending |
-| SYNTH-03 | — | Pending |
-| SYNTH-04 | — | Pending |
-| SYNTH-05 | — | Pending |
-| SYNTH-06 | — | Pending |
-| CUE-01 | — | Pending |
-| CUE-02 | — | Pending |
-| PREV-01 | — | Pending |
+| MODEL-01 | Phase 11 | Pending |
+| MODEL-02 | Phase 11 | Pending |
+| MATCH-01 | Phase 11 | Pending |
+| MATCH-02 | Phase 11 | Pending |
+| EXPR-01 | Phase 12 | Pending |
+| EXPR-02 | Phase 12 | Pending |
+| EXPR-03 | Phase 12 | Pending |
+| SYNTH-01 | Phase 13 | Pending |
+| SYNTH-02 | Phase 13 | Pending |
+| SYNTH-03 | Phase 13 | Pending |
+| SYNTH-04 | Phase 13 | Pending |
+| SYNTH-05 | Phase 14 | Pending |
+| SYNTH-06 | Phase 14 | Pending |
+| CUE-01 | Phase 15 | Pending |
+| CUE-02 | Phase 15 | Pending |
+| PREV-01 | Phase 15 | Pending |
 
 **Coverage:**
 - v1.2 requirements: 16 total
-- Mapped to phases: 0
-- Unmapped: 16
+- Mapped to phases: 16
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-06*
-*Last updated: 2026-03-06 after initial definition*
+*Last updated: 2026-03-06 after roadmap creation*
