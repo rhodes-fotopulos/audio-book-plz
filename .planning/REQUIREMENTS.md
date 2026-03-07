@@ -30,7 +30,7 @@ Requirements for v1.2 Voice Expression milestone. Each maps to roadmap phases.
 - [x] **SYNTH-03**: ~~Pitch shifting applied via pedalboard PitchShift as third post-processing dimension~~ DROPPED -- No emotion data to wire into synthesis.
 - [x] **SYNTH-04**: ~~`--expression` flag enables/disables emotion conditioning with graceful fallback when emotion.json missing~~ DROPPED -- No emotion data to wire into synthesis.
 - [x] **SYNTH-05**: Precomputed reference encoding cached per character, reused across all segments for that character
-- [ ] **SYNTH-06**: `--batch-by-character` flag for per-character synthesis ordering with post-hoc chapter stitching
+- [x] **SYNTH-06**: `--batch-by-character` flag for per-character synthesis ordering with post-hoc chapter stitching
 
 ### Text-Cue Injection
 
@@ -79,7 +79,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SYNTH-03 | Phase 13 (removed) | DROPPED |
 | SYNTH-04 | Phase 13 (removed) | DROPPED |
 | SYNTH-05 | Phase 13 | Complete |
-| SYNTH-06 | Phase 13 | Pending |
+| SYNTH-06 | Phase 13 | Complete |
 | CUE-01 | Phase 15 (removed) | DROPPED |
 | CUE-02 | Phase 15 (removed) | DROPPED |
 | PREV-01 | Phase 15 (removed) | DROPPED |

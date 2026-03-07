@@ -36,7 +36,7 @@
 
 - [x] **Phase 11: Data Model Unification and Voice Matching** - Unified VoiceProfile replaces duplicated fields; matchers consume richer voice data (completed 2026-03-07)
 - [x] **Phase 12: Emotion Removal and LLM Optimization** - Pipeline simplified by removing unused emotion system; speech-act post-processing and LLM refinement made opt-in; trait matcher results cached (completed 2026-03-07)
-- [ ] **Phase 13: Synthesis Performance** - Reference caching and batch-by-character ordering for faster synthesis runs
+- [x] **Phase 13: Synthesis Performance** - Reference caching and batch-by-character ordering for faster synthesis runs (completed 2026-03-07)
 
 ## Phase Details
 
@@ -79,7 +79,7 @@ Plans:
   1. Voice reference encoding is computed once per character and reused across all that character's segments (visible in logs, measurable time reduction)
   2. Running with --batch-by-character synthesizes all segments for each character consecutively, then stitches output back into chapter order
   3. Final audiobook output is identical regardless of whether --batch-by-character is used (ordering is a synthesis optimization, not an output change)
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 13-01-PLAN.md -- Reference encoding cache per character (SYNTH-05)
@@ -104,7 +104,7 @@ Phases execute in numeric order: 11 -> 12 -> 13
 | 10. Verification & CLI Wiring Fixes | v1.1 | 3/3 | Complete | 2026-03-04 |
 | 11. Data Model Unification and Voice Matching | v1.2 | 2/2 | Complete | 2026-03-07 |
 | 12. Emotion Removal and LLM Optimization | v1.2 | Complete    | 2026-03-07 | 2026-03-07 |
-| 13. Synthesis Performance | 1/2 | In Progress|  | - |
+| 13. Synthesis Performance | 2/2 | Complete   | 2026-03-07 | - |
 
 ---
 *Roadmap created: 2026-03-03*
