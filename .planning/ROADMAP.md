@@ -65,7 +65,7 @@ Plans:
   3. LLM refinement available via --refine-llm flag (default OFF)
   4. Trait matcher caches LLM results and skips LLM on re-runs with unchanged inputs
   5. ROADMAP and REQUIREMENTS reflect 3-phase structure (11-13)
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 Plans:
 - [ ] 12-01-PLAN.md -- Emotion removal and speech-act flags
@@ -99,7 +99,7 @@ Phases execute in numeric order: 11 -> 12 -> 13
 | 9. Production Polish | v1.1 | 3/3 | Complete | 2026-03-04 |
 | 10. Verification & CLI Wiring Fixes | v1.1 | 3/3 | Complete | 2026-03-04 |
 | 11. Data Model Unification and Voice Matching | v1.2 | 2/2 | Complete | 2026-03-07 |
-| 12. Emotion Removal and LLM Optimization | v1.2 | 0/2 | Not started | - |
+| 12. Emotion Removal and LLM Optimization | v1.2 | 1/2 | In Progress | - |
 | 13. Synthesis Performance | v1.2 | 0/? | Not started | - |
 
 ---

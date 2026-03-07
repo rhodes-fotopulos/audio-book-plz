@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Voice Expression
-status: completed
-stopped_at: Phase 12 context gathered
-last_updated: "2026-03-07T06:37:59.774Z"
-last_activity: 2026-03-07 -- Completed 11-02 matcher and orchestrator VoiceProfile wiring
+status: in-progress
+stopped_at: Completed 12-02-PLAN.md
+last_updated: "2026-03-07T07:11:31Z"
+last_activity: 2026-03-07 -- Completed 12-02 trait matcher caching and doc updates
 progress:
-  total_phases: 5
+  total_phases: 3
   completed_phases: 1
   total_plans: 2
   completed_plans: 2
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-06)
 
 **Core value:** Feed in an EPUB, get out a multi-voice audiobook where each character has a distinct, fitting voice cloned from a real human recording.
-**Current focus:** Phase 11 - Data Model Unification and Voice Matching
+**Current focus:** Phase 12 - Emotion Removal and LLM Optimization
 
 ## Current Position
 
-Phase: 11 of 15 (Data Model Unification and Voice Matching)
+Phase: 12 of 13 (Emotion Removal and LLM Optimization)
 Plan: 2 of 2 in current phase (COMPLETE)
-Status: Phase 11 Complete
-Last activity: 2026-03-07 -- Completed 11-02 matcher and orchestrator VoiceProfile wiring
+Status: Phase 12 Complete
+Last activity: 2026-03-07 -- Completed 12-02 trait matcher caching and doc updates
 
-Progress: [██████████] 100% (2/2 plans in phase 11)
+Progress: [██████████] 100% (2/2 plans in phase 12)
 
 ## Performance Metrics
 
@@ -43,8 +43,12 @@ Progress: [██████████] 100% (2/2 plans in phase 11)
 - Timeline: 1 day
 
 **v1.2:**
-- Phases: 5 (11-15), Plans: TBD
+- Phases: 3 (11-13), Plans: TBD
 - Timeline: In progress
+
+| Phase | Plan | Duration | Tasks | Files |
+|-------|------|----------|-------|-------|
+| 12 | 02 | 10min | 2 | 5 |
 
 ## Accumulated Context
 
@@ -58,6 +62,8 @@ Recent decisions affecting current work:
 - [Phase 11]: Clean break with no backward compatibility -- VoiceQualities and VoiceBaseline deleted entirely
 - [Phase 11]: Evidence-based tiebreaking uses VoiceProfile.description length as proxy for textual evidence
 - [Phase 11]: Coarse traits only for embeddings -- rich descriptors don't embed close to LibriTTS-P vocabulary
+- [Phase 12]: Cache key includes character profile + sorted available candidate IDs for invalidation when pool shrinks
+- [Phase 12]: Milestone restructured from 5 phases (11-15) to 3 phases (11-13) after emotion system removal
 
 ### Pending Todos
 
@@ -69,6 +75,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-07T06:37:59.766Z
-Stopped at: Phase 12 context gathered
-Resume file: .planning/phases/12-expression-system-core/12-CONTEXT.md
+Last session: 2026-03-07T07:11:31Z
+Stopped at: Completed 12-02-PLAN.md
+Resume file: .planning/phases/12-expression-system-core/12-02-SUMMARY.md
