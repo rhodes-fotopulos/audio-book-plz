@@ -10,15 +10,15 @@ Feed in an EPUB, get out a multi-voice audiobook where each character has a dist
 
 ## Current Milestone: v1.2 Voice Expression
 
-**Goal:** Wire the extracted voice and emotion data into TTS synthesis so each character sounds consistently styled, scenes carry emotional weight, and the duplicated voice fields are unified.
+**Goal:** Unify voice data model, simplify pipeline by removing incompatible emotion system, optimize LLM usage with caching and optional flags, and improve synthesis performance.
 
 **Target features:**
 - Merge voice_qualities + voice_baseline into single voice_profile (eliminate duplication)
 - Feed voice_profile description to Qwen3-TTS as style conditioning per character
 - Use voice_profile attributes in voice matching (trait_matcher, embedding_matcher)
-- Feed scene mood to TTS for emotional context per segment
-- Feed line-level emotion overrides to TTS for high-contrast moments
-- Three-layer TTS conditioning: voice_profile (constant) + scene mood (varies) + line override (rare)
+- Remove emotion system (incompatible with Base model voice cloning)
+- Speech-act post-processing opt-in via --speech-act-fx flag
+- LLM result caching for trait matcher to skip redundant calls on re-runs
 
 ## Requirements
 
@@ -46,13 +46,18 @@ Feed in an EPUB, get out a multi-voice audiobook where each character has a dist
 - ✓ Post-processing pipeline: noise gate, compress, highpass EQ, limiter, crossfade, 44.1kHz 192kbps ACX export — Phase 9
 - ✓ Voice consistency pass: Resemblyzer embedding comparison to detect and regenerate drifted segments — Phase 9
 
+### Validated (v1.2)
+
+- ✓ Unified voice_profile field replacing voice_qualities and voice_baseline — Phase 11
+- ✓ Voice style conditioning passed to Qwen3-TTS per character — Phase 11
+- ✓ Voice matching uses unified voice_profile for better speaker selection — Phase 11
+- ✓ Emotion system removed (Base model cannot combine voice cloning with emotion instructions) — Phase 12
+- ✓ Speech-act post-processing made opt-in via --speech-act-fx flag — Phase 12
+- ✓ LLM result caching for trait matcher — Phase 12
+
 ### Active
 
-- [ ] Unified voice_profile field replacing voice_qualities and voice_baseline
-- [ ] Voice style conditioning passed to Qwen3-TTS per character
-- [ ] Scene mood emotion data fed to TTS synthesis
-- [ ] Line-level emotion overrides fed to TTS synthesis
-- [ ] Voice matching uses unified voice_profile for better speaker selection
+None — all v1.2 requirements addressed. Phase 13 (Synthesis Performance) remains.
 
 ### Future
 
@@ -78,7 +83,7 @@ Feed in an EPUB, get out a multi-voice audiobook where each character has a dist
 
 Shipped v1.0 with 9,515 LOC across 6 phases/17 plans, then v1.1 with 4 phases/12 plans.
 Tech stack: Python 3.11, Ollama + Qwen3 14B/8B, Qwen3-TTS 1.7B via mlx-audio, LibriTTS-R, pedalboard, Resemblyzer, pydub + ffmpeg.
-Architecture: Six sequential phases — EPUB parsing → LLM attribution (with emotion) → voice matching → TTS synthesis → voice consistency verification → audio assembly with mastering. Each phase produces intermediate JSON/WAV artifacts enabling checkpoint/resume.
+Architecture: Six sequential phases — EPUB parsing → LLM attribution → voice matching → TTS synthesis → voice consistency verification → audio assembly with mastering. Each phase produces intermediate JSON/WAV artifacts enabling checkpoint/resume.
 Hardware: M4 Mac with 16GB unified memory. LLM and TTS run in separate phases with explicit Ollama teardown at the boundary.
 
 **v1.1 shipped:** Swapped Chatterbox → Qwen3-TTS 1.7B (MLX), added 3-layer emotion system, hybrid dialogue detection with speech-act tagging, Gaussian pause timing, pedalboard mastering chain, Resemblyzer voice consistency verification, and ACX-grade MP3 export (44.1kHz 192kbps CBR).
@@ -115,6 +120,10 @@ Hardware: M4 Mac with 16GB unified memory. LLM and TTS run in separate phases wi
 | Pedalboard for mastering chain | NoiseGate → Compressor → HighPass(80Hz) → Limiter, LUFS-validated | ✓ Good — measurable audio improvement |
 | Gaussian pause timing | Natural-sounding variation vs fixed silence, 5 boundary types | ✓ Good — eliminates robotic pacing |
 | Speech-act post-processing over TTS instruct | Base model ignores instruct prompts with cloned voices; post-process volume/speed instead | ✓ Good — reliable with any voice reference |
+| Emotion system removal | Qwen3-TTS Base cannot combine voice cloning + emotion instructions | ✓ Good — pipeline simplified, no unused code |
+| Speech-act FX opt-in (default OFF) | LUFS normalization undoes volume deltas; keep off until needed | ✓ Good — clean default behavior |
+| Trait matcher LLM caching | Cache key includes profile + available candidates for proper invalidation | ✓ Good — saves N LLM calls on re-runs |
+| Milestone restructure 5→3 phases | Emotion removal eliminates need for 2 planned phases | ✓ Good — focused scope |
 
 ---
-*Last updated: 2026-03-06 after v1.2 milestone started*
+*Last updated: 2026-03-07 after Phase 12*
