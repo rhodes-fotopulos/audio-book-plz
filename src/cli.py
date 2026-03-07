@@ -75,8 +75,8 @@ def convert(
     model: str = typer.Option(
         None,
         "--model",
-        help="Override Ollama model for LLM phases (e.g., qwen3.5:9b, qwen3.5:4b). "
-        "Default: auto-selects based on available RAM.",
+        help="Override LLM model (e.g., qwen3.5:9b, claude-code). "
+        "Use 'claude-code' to run through Claude Code CLI (requires Max plan).",
     ),
     cpu: bool = typer.Option(
         False,
@@ -92,6 +92,11 @@ def convert(
         None,
         "--mp3-dir",
         help="Output directory for MP3 files (default: alongside input EPUB)",
+    ),
+    speech_act_fx: bool = typer.Option(
+        False,
+        "--speech-act-fx",
+        help="Enable speech-act audio adjustments (whispered/shouted/thought volume/speed changes)",
     ),
 ) -> None:
     """Run full pipeline: parse -> attribute -> match -> synthesize -> assemble."""
@@ -125,6 +130,7 @@ def convert(
         epub_file, output_dir, libritts_data, libritts_audio,
         cpu=cpu, engine_type=engine, model_override=model,
         voice_threshold=voice_threshold, mp3_output_dir=mp3_dir,
+        speech_act_fx=speech_act_fx,
     )
 
 
@@ -137,8 +143,8 @@ def attribute(
     model: str = typer.Option(
         None,
         "--model",
-        help="Override Ollama model (e.g., qwen3.5:9b, qwen3.5:4b). "
-        "Default: auto-selects based on available RAM.",
+        help="Override LLM model (e.g., qwen3.5:9b, claude-code). "
+        "Use 'claude-code' to run through Claude Code CLI (requires Max plan).",
     ),
 ) -> None:
     """Attribute dialogue speakers using local LLM."""
@@ -174,8 +180,8 @@ def match(
     model: str = typer.Option(
         None,
         "--model",
-        help="Override Ollama model (e.g., qwen3.5:9b, qwen3.5:4b). "
-        "Default: auto-selects based on available RAM.",
+        help="Override LLM model (e.g., qwen3.5:9b, claude-code). "
+        "Use 'claude-code' to run through Claude Code CLI (requires Max plan).",
     ),
 ) -> None:
     """Match characters to LibriTTS-P voice references."""
@@ -258,6 +264,11 @@ def synthesize(
         "Default: LIBRITTS_R_AUDIO env var",
         envvar="LIBRITTS_R_AUDIO",
     ),
+    speech_act_fx: bool = typer.Option(
+        False,
+        "--speech-act-fx",
+        help="Enable speech-act audio adjustments (whispered/shouted/thought volume/speed changes)",
+    ),
 ) -> None:
     """Synthesize audio segments with Qwen3-TTS."""
     # Validate prerequisites
@@ -282,6 +293,7 @@ def synthesize(
         book_dir, chapter=chapter, dry_run=dry_run, verbose=verbose,
         cpu=cpu, engine_type=engine,
         libritts_audio_dir=libritts_audio,
+        speech_act_fx=speech_act_fx,
     )
 
 

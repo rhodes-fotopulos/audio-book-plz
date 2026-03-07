@@ -401,6 +401,7 @@ def run_synthesize(
     cpu: bool = False,
     engine_type: str = "qwen3",
     libritts_audio_dir: Path | None = None,
+    speech_act_fx: bool = False,
 ) -> Path:
     """End-to-end synthesis phase: attributed segments -> WAV audio files.
 
@@ -417,6 +418,8 @@ def run_synthesize(
         engine_type: TTS engine to use (``'qwen3'``).
         libritts_audio_dir: Path to LibriTTS-R audio directory for voice
             reference preparation with transcripts.
+        speech_act_fx: If True, enable speech-act audio post-processing
+            (volume/speed adjustments for whispered/shouted/thought).
 
     Returns:
         Path to the wavs output directory.
@@ -496,6 +499,7 @@ def run_synthesize(
     config = SynthesisConfig(
         device="cpu" if cpu else "auto",
         engine_type=engine_type,
+        speech_act_fx=speech_act_fx,
     )
 
     # Handle --cpu with Qwen3 (MLX manages device selection)
@@ -725,6 +729,7 @@ def run_full_pipeline(
     model_override: str | None = None,
     voice_threshold: float = 0.60,
     mp3_output_dir: Path | None = None,
+    speech_act_fx: bool = False,
 ) -> None:
     """Orchestrate all pipeline phases.
 
@@ -741,6 +746,7 @@ def run_full_pipeline(
         model_override: If set, force this Ollama model for LLM phases.
         voice_threshold: Cosine similarity threshold for voice consistency.
         mp3_output_dir: If provided, MP3 output goes here instead of book dir.
+        speech_act_fx: If True, enable speech-act audio post-processing.
     """
     rprint("\n[bold green]Phase 1: Parse[/bold green]")
     run_parse(epub_path, output_dir)
@@ -767,6 +773,7 @@ def run_full_pipeline(
         cpu=cpu,
         engine_type=engine_type,
         libritts_audio_dir=libritts_audio_dir,
+        speech_act_fx=speech_act_fx,
     )
 
     rprint("\n[bold green]Phase 4.5: Voice Consistency[/bold green]")

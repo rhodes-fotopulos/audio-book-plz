@@ -247,12 +247,13 @@ def classify_speech_acts_llm(
 def classify_speech_acts(
     segments: list[dict],
     chapter_num: int,
+    use_llm: bool = False,
 ) -> list[dict]:
     """Classify speech-acts for all segments in a chapter.
 
     Main entry point. Runs hybrid regex+LLM classification:
     1. Regex pass on all dialogue segments with surrounding context
-    2. LLM pass for segments where regex confidence < 0.8
+    2. LLM pass for segments where regex confidence < 0.8 (only when use_llm=True)
     3. Merge: LLM wins when it returns a result
 
     Non-dialogue segments get speech_act="spoken" (default/baseline).
@@ -260,6 +261,9 @@ def classify_speech_acts(
     Args:
         segments: Full chapter segment list (includes narration for context).
         chapter_num: 1-based chapter number.
+        use_llm: If True, send low-confidence regex results to LLM for
+            refinement. Default False (regex-only classification to save
+            LLM calls).
 
     Returns:
         The same segments list with speech_act field added to each segment.
@@ -299,9 +303,9 @@ def classify_speech_acts(
             seg_copy["_context_after"] = context_after.strip()
             needs_llm.append(seg_copy)
 
-    # Pass 2: LLM for low-confidence regex results
+    # Pass 2: LLM for low-confidence regex results (only when use_llm=True)
     llm_results: dict[int, tuple[str, float]] = {}
-    if needs_llm:
+    if use_llm and needs_llm:
         logger.info(
             "Chapter %d: %d/%d dialogue segments need LLM refinement",
             chapter_num,

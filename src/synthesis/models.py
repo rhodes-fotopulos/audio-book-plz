@@ -51,6 +51,10 @@ class SynthesisConfig:
     device: str = "auto"
     """'auto' detects available hardware; also accepts 'mps' or 'cpu'."""
 
+    # Speech-act post-processing
+    speech_act_fx: bool = False
+    """Apply speech-act audio post-processing (volume/speed adjustments for whispered/shouted/thought). Default OFF — TTS engine natural prosody is trusted."""
+
 
 # ---------------------------------------------------------------------------
 # Per-segment result

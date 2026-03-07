@@ -143,6 +143,24 @@ class TestUnknownSpeechAct:
         assert sr == 24000
 
 
+class TestSpeechActFxFlag:
+    """Tests that speech_act_fx flag gates post-processing in SynthesisConfig."""
+
+    def test_speech_act_fx_default_false(self) -> None:
+        """SynthesisConfig.speech_act_fx should default to False."""
+        from src.synthesis.models import SynthesisConfig
+
+        config = SynthesisConfig()
+        assert config.speech_act_fx is False
+
+    def test_speech_act_fx_can_be_enabled(self) -> None:
+        """SynthesisConfig.speech_act_fx can be set to True."""
+        from src.synthesis.models import SynthesisConfig
+
+        config = SynthesisConfig(speech_act_fx=True)
+        assert config.speech_act_fx is True
+
+
 class TestGetAdjustmentParams:
     """Tests for get_adjustment_params helper."""
 

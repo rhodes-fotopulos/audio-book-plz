@@ -290,21 +290,22 @@ def run_synthesis(
                         )
                         gen_time = time.monotonic() - gen_start
 
-                        # Apply speech-act post-processing
-                        speech_act = seg.get("speech_act", "spoken")
-                        if speech_act != "spoken":
-                            adj_audio, _ = apply_speech_act_adjustments(
-                                audio_result.audio, audio_result.sample_rate, speech_act
-                            )
-                            audio_result = AudioResult(
-                                audio=adj_audio,
-                                sample_rate=audio_result.sample_rate,
-                                duration_s=len(adj_audio) / audio_result.sample_rate,
-                            )
-                            logger.debug(
-                                "Applied %s adjustments to seg_%04d",
-                                speech_act, seg_id,
-                            )
+                        # Apply speech-act post-processing (only when enabled)
+                        if config.speech_act_fx:
+                            speech_act = seg.get("speech_act", "spoken")
+                            if speech_act != "spoken":
+                                adj_audio, _ = apply_speech_act_adjustments(
+                                    audio_result.audio, audio_result.sample_rate, speech_act
+                                )
+                                audio_result = AudioResult(
+                                    audio=adj_audio,
+                                    sample_rate=audio_result.sample_rate,
+                                    duration_s=len(adj_audio) / audio_result.sample_rate,
+                                )
+                                logger.debug(
+                                    "Applied %s adjustments to seg_%04d",
+                                    speech_act, seg_id,
+                                )
 
                         saved = engine.save_wav_atomic(audio_result, wav_path)
                         if not saved:
@@ -355,19 +356,20 @@ def run_synthesis(
                                         )
                                         gen_time = time.monotonic() - gen_start
 
-                                        # Apply speech-act post-processing
-                                        speech_act = seg.get("speech_act", "spoken")
-                                        if speech_act != "spoken":
-                                            adj_audio, _ = apply_speech_act_adjustments(
-                                                audio_result.audio,
-                                                audio_result.sample_rate,
-                                                speech_act,
-                                            )
-                                            audio_result = AudioResult(
-                                                audio=adj_audio,
-                                                sample_rate=audio_result.sample_rate,
-                                                duration_s=len(adj_audio) / audio_result.sample_rate,
-                                            )
+                                        # Apply speech-act post-processing (only when enabled)
+                                        if config.speech_act_fx:
+                                            speech_act = seg.get("speech_act", "spoken")
+                                            if speech_act != "spoken":
+                                                adj_audio, _ = apply_speech_act_adjustments(
+                                                    audio_result.audio,
+                                                    audio_result.sample_rate,
+                                                    speech_act,
+                                                )
+                                                audio_result = AudioResult(
+                                                    audio=adj_audio,
+                                                    sample_rate=audio_result.sample_rate,
+                                                    duration_s=len(adj_audio) / audio_result.sample_rate,
+                                                )
 
                                         saved = engine.save_wav_atomic(
                                             audio_result, wav_path
@@ -475,19 +477,20 @@ def run_synthesis(
                     )
                     gen_time = time.monotonic() - gen_start
 
-                    # Apply speech-act post-processing
-                    speech_act = seg.get("speech_act", "spoken")
-                    if speech_act != "spoken":
-                        adj_audio, _ = apply_speech_act_adjustments(
-                            audio_result.audio,
-                            audio_result.sample_rate,
-                            speech_act,
-                        )
-                        audio_result = AudioResult(
-                            audio=adj_audio,
-                            sample_rate=audio_result.sample_rate,
-                            duration_s=len(adj_audio) / audio_result.sample_rate,
-                        )
+                    # Apply speech-act post-processing (only when enabled)
+                    if config.speech_act_fx:
+                        speech_act = seg.get("speech_act", "spoken")
+                        if speech_act != "spoken":
+                            adj_audio, _ = apply_speech_act_adjustments(
+                                audio_result.audio,
+                                audio_result.sample_rate,
+                                speech_act,
+                            )
+                            audio_result = AudioResult(
+                                audio=adj_audio,
+                                sample_rate=audio_result.sample_rate,
+                                duration_s=len(adj_audio) / audio_result.sample_rate,
+                            )
 
                     saved = engine.save_wav_atomic(audio_result, wav_path)
                     if saved:

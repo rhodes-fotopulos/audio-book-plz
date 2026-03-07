@@ -195,7 +195,7 @@ class TestClassifySpeechActsIntegration:
     def test_llm_overrides_low_confidence_regex(
         self, mock_llm: MagicMock
     ) -> None:
-        """LLM result should override low-confidence regex result."""
+        """LLM result should override low-confidence regex result (when use_llm=True)."""
         segments = [
             {"id": 0, "type": "narration", "text": "He said softly,"},
             {"id": 1, "type": "dialogue", "text": "Come here."},
@@ -206,7 +206,7 @@ class TestClassifySpeechActsIntegration:
         # LLM should be called and its result should win
         mock_llm.return_value = {1: ("whispered", 0.85)}
 
-        result = classify_speech_acts(segments, chapter_num=1)
+        result = classify_speech_acts(segments, chapter_num=1, use_llm=True)
 
         assert result[1]["speech_act"] == "whispered"
         mock_llm.assert_called_once()
@@ -231,6 +231,38 @@ class TestClassifySpeechActsIntegration:
         assert result[1]["speech_act"] == "shouted"
         # Seg 3: narration before says "thought" -> thought
         assert result[3]["speech_act"] == "thought"
+
+    @patch("src.attribution.speech_acts.classify_speech_acts_llm")
+    def test_use_llm_false_skips_llm(self, mock_llm: MagicMock) -> None:
+        """With use_llm=False (default), LLM should not be called even for low-confidence segments."""
+        segments = [
+            {"id": 0, "type": "narration", "text": "He said softly,"},
+            {"id": 1, "type": "dialogue", "text": "Come here."},
+            {"id": 2, "type": "narration", "text": "She nodded."},
+        ]
+
+        # Regex will return ("spoken", 0.5) for this neutral context
+        # With use_llm=False, LLM should NOT be called
+        result = classify_speech_acts(segments, chapter_num=1, use_llm=False)
+
+        mock_llm.assert_not_called()
+        assert result[1]["speech_act"] == "spoken"
+
+    @patch("src.attribution.speech_acts.classify_speech_acts_llm")
+    def test_use_llm_true_calls_llm(self, mock_llm: MagicMock) -> None:
+        """With use_llm=True, LLM should be called for low-confidence segments."""
+        segments = [
+            {"id": 0, "type": "narration", "text": "He said softly,"},
+            {"id": 1, "type": "dialogue", "text": "Come here."},
+            {"id": 2, "type": "narration", "text": "She nodded."},
+        ]
+
+        mock_llm.return_value = {1: ("whispered", 0.85)}
+
+        result = classify_speech_acts(segments, chapter_num=1, use_llm=True)
+
+        mock_llm.assert_called_once()
+        assert result[1]["speech_act"] == "whispered"
 
     def test_all_segments_have_speech_act(self) -> None:
         """Every segment should have a speech_act field after classification."""
