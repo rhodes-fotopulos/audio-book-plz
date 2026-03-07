@@ -14,8 +14,8 @@ Requirements for v1.2 Voice Expression milestone. Each maps to roadmap phases.
 
 ### Voice Matching
 
-- [ ] **MATCH-01**: trait_matcher uses unified VoiceProfile fields for richer character-to-speaker descriptions
-- [ ] **MATCH-02**: embedding_matcher uses unified VoiceProfile fields for better embedding-based matching
+- [x] **MATCH-01**: trait_matcher uses unified VoiceProfile fields for richer character-to-speaker descriptions
+- [x] **MATCH-02**: embedding_matcher uses unified VoiceProfile fields for better embedding-based matching
 
 ### Expression System
 
@@ -69,8 +69,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | MODEL-01 | Phase 11 | Complete |
 | MODEL-02 | Phase 11 | Complete |
-| MATCH-01 | Phase 11 | Pending |
-| MATCH-02 | Phase 11 | Pending |
+| MATCH-01 | Phase 11 | Complete |
+| MATCH-02 | Phase 11 | Complete |
 | EXPR-01 | Phase 12 | Pending |
 | EXPR-02 | Phase 12 | Pending |
 | EXPR-03 | Phase 12 | Pending |

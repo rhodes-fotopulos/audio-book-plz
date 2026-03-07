@@ -34,7 +34,7 @@
 
 **Milestone Goal:** Wire extracted voice and emotion data into TTS synthesis so each character sounds consistently styled, scenes carry emotional weight, and duplicated voice fields are unified.
 
-- [ ] **Phase 11: Data Model Unification and Voice Matching** - Unified VoiceProfile replaces duplicated fields; matchers consume richer voice data
+- [x] **Phase 11: Data Model Unification and Voice Matching** - Unified VoiceProfile replaces duplicated fields; matchers consume richer voice data (completed 2026-03-07)
 - [ ] **Phase 12: Expression System Core** - Three-layer expression resolver produces concrete audio parameters from emotion data
 - [ ] **Phase 13: Synthesis Wiring and Post-Processing** - Expression system connected to synthesis loop with pitch shifting and feature flag
 - [ ] **Phase 14: Synthesis Performance** - Reference caching and batch-by-character ordering for faster synthesis runs
@@ -51,7 +51,7 @@
   2. Existing characters.json files from v1.1 load without errors or re-extraction (backward compatibility)
   3. Voice matching produces speaker assignments using the richer unified profile data (visible in matching logs)
   4. No regression in speaker selection quality compared to v1.1 output
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 11-01-PLAN.md -- VoiceProfile model, extraction prompt, and merger redesign
@@ -117,7 +117,7 @@ Note: Phase 14 and 15 both depend on Phase 13 and could execute in either order.
 | 8. LLM Intelligence and Emotion | v1.1 | 3/3 | Complete | 2026-03-04 |
 | 9. Production Polish | v1.1 | 3/3 | Complete | 2026-03-04 |
 | 10. Verification & CLI Wiring Fixes | v1.1 | 3/3 | Complete | 2026-03-04 |
-| 11. Data Model Unification and Voice Matching | 1/2 | In Progress|  | - |
+| 11. Data Model Unification and Voice Matching | 2/2 | Complete   | 2026-03-07 | - |
 | 12. Expression System Core | v1.2 | 0/? | Not started | - |
 | 13. Synthesis Wiring and Post-Processing | v1.2 | 0/? | Not started | - |
 | 14. Synthesis Performance | v1.2 | 0/? | Not started | - |
