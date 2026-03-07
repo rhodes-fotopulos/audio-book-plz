@@ -95,6 +95,9 @@ def run_matching(
     speaker_ids, speaker_embeddings = build_speaker_embeddings(all_speakers)
     rprint(f"  Encoded [cyan]{len(speaker_ids)}[/cyan] speakers into embedding space")
 
+    # Cache directory for LLM trait matching results
+    cache_dir = book_dir / ".cache"
+
     # Track assigned speaker IDs to enforce uniqueness during matching
     assigned_ids: set[str] = set()
     all_assignments: list[VoiceAssignment] = []
@@ -107,6 +110,7 @@ def run_matching(
     narrator_assignment = match_narrator_llm(
         characters, segments, narrator_candidates,
         classification.narrator_mode, assigned_ids,
+        cache_dir=cache_dir,
     )
 
     if narrator_assignment is None:
@@ -188,7 +192,7 @@ def run_matching(
         else:
             candidates = filtered
 
-        assignment = match_character_llm(char, candidates, assigned_ids)
+        assignment = match_character_llm(char, candidates, assigned_ids, cache_dir=cache_dir)
 
         if assignment is None:
             # Embedding fallback

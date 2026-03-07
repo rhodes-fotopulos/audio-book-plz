@@ -12,9 +12,11 @@ from __future__ import annotations
 
 import logging
 from collections import Counter
+from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
 
+from src.attribution.cache import check_cache, get_cache_key, write_cache
 from src.attribution.llm_client import call_llm_structured
 from src.attribution.models import CharacterProfile
 from src.matching.models import SpeakerAnnotation, VoiceAssignment
@@ -158,6 +160,7 @@ def match_character_llm(
     character: CharacterProfile,
     candidates: list[SpeakerAnnotation],
     assigned_ids: set[str] | None = None,
+    cache_dir: Path | None = None,
 ) -> VoiceAssignment | None:
     """Match a character to a LibriTTS-P speaker using LLM trait comparison.
 
@@ -169,6 +172,7 @@ def match_character_llm(
         character: Character profile with voice qualities and traits.
         candidates: Pre-filtered candidate speakers.
         assigned_ids: Speaker IDs already assigned to other characters.
+        cache_dir: Directory for caching LLM results. None disables caching.
 
     Returns:
         VoiceAssignment if successful, None if all attempts fail.
@@ -182,6 +186,21 @@ def match_character_llm(
         return None
 
     valid_ids = {c.speaker_id for c in available}
+
+    # Check cache before making LLM call
+    cache_key: str | None = None
+    if cache_dir is not None:
+        profile_str = character.model_dump_json()
+        available_ids = sorted(
+            c.speaker_id for c in candidates
+            if c.speaker_id not in assigned_ids
+        )
+        cache_content = f"{profile_str}|{','.join(available_ids)}"
+        cache_key = get_cache_key(cache_content, "trait_match")
+        cached = check_cache(cache_dir, cache_key)
+        if cached is not None:
+            logger.info("Cache hit for character %s", character.name)
+            return VoiceAssignment(**cached)
 
     char_desc = _build_character_description(character)
     candidates_text = _build_candidates_text(candidates, assigned_ids)
@@ -198,7 +217,7 @@ def match_character_llm(
         if result is None:
             continue
         if result.speaker_id in valid_ids:
-            return VoiceAssignment(
+            assignment = VoiceAssignment(
                 character_name=character.name,
                 speaker_id=result.speaker_id,
                 clip_path="",  # Set later by clip_selector
@@ -208,6 +227,9 @@ def match_character_llm(
                 method="llm",
                 warning=None,
             )
+            if cache_dir is not None and cache_key is not None:
+                write_cache(cache_dir, cache_key, assignment.model_dump())
+            return assignment
         logger.warning(
             "Attempt %d: LLM returned invalid speaker_id %s for %s",
             attempt + 1,
@@ -230,6 +252,7 @@ def match_narrator_llm(
     candidates: list[SpeakerAnnotation],
     narrator_mode: str,
     assigned_ids: set[str] | None = None,
+    cache_dir: Path | None = None,
 ) -> VoiceAssignment | None:
     """Match a narrator voice using LLM trait comparison.
 
@@ -242,6 +265,7 @@ def match_narrator_llm(
         candidates: Pre-filtered candidate speakers.
         narrator_mode: 'first_person' or 'third_person'.
         assigned_ids: Speaker IDs already assigned.
+        cache_dir: Directory for caching LLM results. None disables caching.
 
     Returns:
         VoiceAssignment for the narrator, or None if matching fails.
@@ -279,6 +303,20 @@ def match_narrator_llm(
             f"Available speakers:\n{candidates_text}"
         )
 
+    # Check cache before making LLM call
+    cache_key: str | None = None
+    if cache_dir is not None:
+        available_ids = sorted(
+            c.speaker_id for c in candidates
+            if c.speaker_id not in assigned_ids
+        )
+        cache_content = f"{narrator_mode}|{user_content}|{','.join(available_ids)}"
+        cache_key = get_cache_key(cache_content, "narrator_match")
+        cached = check_cache(cache_dir, cache_key)
+        if cached is not None:
+            logger.info("Cache hit for narrator matching")
+            return VoiceAssignment(**cached)
+
     for attempt in range(3):
         result = call_llm_structured(
             system_prompt=system_prompt,
@@ -291,7 +329,7 @@ def match_narrator_llm(
             reasoning = result.reasoning
             if narrator_mode == "first_person":
                 reasoning = f"First-person narrator = protagonist voice. {reasoning}"
-            return VoiceAssignment(
+            assignment = VoiceAssignment(
                 character_name="narrator",
                 speaker_id=result.speaker_id,
                 clip_path="",
@@ -301,6 +339,9 @@ def match_narrator_llm(
                 method="llm",
                 warning=None,
             )
+            if cache_dir is not None and cache_key is not None:
+                write_cache(cache_dir, cache_key, assignment.model_dump())
+            return assignment
         logger.warning(
             "Attempt %d: LLM returned invalid speaker_id %s for narrator",
             attempt + 1,
