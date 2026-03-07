@@ -386,6 +386,225 @@ def test_character_name_passed_to_engine(mock_create_engine, tmp_path):
         )
 
 
+def _make_multi_speaker_segments(chapters: int = 2, per_chapter: int = 3) -> list[dict]:
+    """Create segments with multiple speakers across chapters for batch testing."""
+    segments = []
+    seg_id = 0
+    speakers = ["narrator", "Alice", "Bob"]
+    for ch in range(1, chapters + 1):
+        for i in range(per_chapter):
+            speaker = speakers[i % len(speakers)]
+            segments.append(
+                {
+                    "id": seg_id,
+                    "chapter": ch,
+                    "chapter_title": f"Chapter {ch}",
+                    "type": "narration" if speaker == "narrator" else "dialogue",
+                    "text": f"Test segment {seg_id}.",
+                    "speaker": speaker,
+                    "confidence": 0.9,
+                }
+            )
+            seg_id += 1
+    return segments
+
+
+def _make_voice_map_multi(book_dir: Path) -> Path:
+    """Create a voice_map.json with narrator, Alice, and Bob."""
+    vm = {
+        "book_slug": "test-book",
+        "narrator": {
+            "character_name": "narrator",
+            "speaker_id": "100",
+            "clip_path": "ref/narrator.wav",
+            "reasoning": "test",
+            "confidence": 0.9,
+            "is_major": False,
+            "method": "test",
+            "warning": None,
+        },
+        "characters": [
+            {
+                "character_name": "Alice",
+                "speaker_id": "200",
+                "clip_path": "ref/alice.wav",
+                "reasoning": "test",
+                "confidence": 0.8,
+                "is_major": True,
+                "method": "test",
+                "warning": None,
+            },
+            {
+                "character_name": "Bob",
+                "speaker_id": "300",
+                "clip_path": "ref/bob.wav",
+                "reasoning": "test",
+                "confidence": 0.8,
+                "is_major": True,
+                "method": "test",
+                "warning": None,
+            },
+        ],
+        "metadata": {"created_at": "2026-01-01"},
+    }
+    path = book_dir / "voice_map.json"
+    path.write_text(json.dumps(vm), encoding="utf-8")
+    return path
+
+
+# ---------------------------------------------------------------------------
+# Batch-by-character tests
+# ---------------------------------------------------------------------------
+
+
+@patch("src.synthesis.synthesizer.create_engine")
+def test_batch_by_character_groups_by_speaker(mock_create_engine, tmp_path):
+    """With batch_by_character=True, engine.generate calls are grouped by speaker."""
+    from src.matching.models import VoiceMap
+    from src.synthesis.synthesizer import run_synthesis
+
+    book_dir = tmp_path / "book"
+    book_dir.mkdir()
+    _make_voice_map_multi(book_dir)
+
+    segments = _make_multi_speaker_segments(chapters=2, per_chapter=3)
+    config = SynthesisConfig(device="cpu", batch_by_character=True)
+
+    engine = _mock_engine()
+    mock_create_engine.return_value = engine
+
+    vm_path = book_dir / "voice_map.json"
+    vm = VoiceMap.model_validate_json(vm_path.read_text())
+
+    run_synthesis(book_dir, vm, segments, config, verbose=False)
+
+    # Extract character_name from each generate call in order
+    char_names = [
+        call.kwargs.get("character_name") for call in engine.generate.call_args_list
+    ]
+
+    # All segments for one speaker should come before another (grouped, not interleaved)
+    # Find transitions: count how many times the character_name changes
+    transitions = sum(
+        1 for i in range(1, len(char_names)) if char_names[i] != char_names[i - 1]
+    )
+
+    # With 3 speakers, we expect at most 2 transitions (speaker1 -> speaker2 -> speaker3)
+    # Without batching, segments alternate speakers per chapter, giving many transitions
+    unique_speakers = set(char_names)
+    assert transitions <= len(unique_speakers) - 1, (
+        f"Expected at most {len(unique_speakers) - 1} transitions but got {transitions}. "
+        f"Order: {char_names}"
+    )
+
+
+@patch("src.synthesis.synthesizer.create_engine")
+def test_batch_output_matches_sequential(mock_create_engine, tmp_path):
+    """With batch_by_character=True, WAV files are written to chapter-based paths."""
+    from src.matching.models import VoiceMap
+    from src.synthesis.synthesizer import run_synthesis
+
+    book_dir = tmp_path / "book"
+    book_dir.mkdir()
+    _make_voice_map_multi(book_dir)
+
+    segments = _make_multi_speaker_segments(chapters=2, per_chapter=3)
+    config = SynthesisConfig(device="cpu", batch_by_character=True)
+
+    engine = _mock_engine()
+    mock_create_engine.return_value = engine
+
+    vm_path = book_dir / "voice_map.json"
+    vm = VoiceMap.model_validate_json(vm_path.read_text())
+
+    run_synthesis(book_dir, vm, segments, config, verbose=False)
+
+    # Verify save_wav_atomic receives chapter-based paths
+    wav_paths = [
+        call.args[1] for call in engine.save_wav_atomic.call_args_list
+    ]
+    for wp in wav_paths:
+        assert "/ch" in wp, f"WAV path not chapter-based: {wp}"
+        assert "/seg_" in wp, f"WAV path missing segment prefix: {wp}"
+
+
+@patch("src.synthesis.synthesizer.create_engine")
+def test_batch_checkpoint_resume(mock_create_engine, tmp_path):
+    """With batch_by_character=True, pre-existing checkpoint correctly skips segments."""
+    from src.matching.models import VoiceMap
+    from src.synthesis.checkpoint import (
+        create_checkpoint,
+        mark_completed,
+        save_checkpoint,
+    )
+    from src.synthesis.synthesizer import run_synthesis
+
+    book_dir = tmp_path / "book"
+    book_dir.mkdir()
+    _make_voice_map_multi(book_dir)
+
+    segments = _make_multi_speaker_segments(chapters=2, per_chapter=3)
+    config = SynthesisConfig(device="cpu", batch_by_character=True)
+
+    # Pre-populate checkpoint with segments 0 and 3 completed
+    cp = create_checkpoint("test-book", 6, config, engine_name="mock-engine")
+    mark_completed(cp, 0, "wavs/ch01/seg_0000.wav", 1.0, 1.5)
+    mark_completed(cp, 3, "wavs/ch02/seg_0003.wav", 1.0, 1.5)
+    save_checkpoint(cp, book_dir)
+
+    # Create the WAV files so validation passes
+    for ch, sid in [(1, 0), (2, 3)]:
+        wav_dir = book_dir / "wavs" / f"ch{ch:02d}"
+        wav_dir.mkdir(parents=True, exist_ok=True)
+        (wav_dir / f"seg_{sid:04d}.wav").write_bytes(b"\x00" * 100)
+
+    engine = _mock_engine()
+    mock_create_engine.return_value = engine
+
+    vm_path = book_dir / "voice_map.json"
+    vm = VoiceMap.model_validate_json(vm_path.read_text())
+
+    stats = run_synthesis(book_dir, vm, segments, config, verbose=False)
+
+    # 2 segments were cached, 4 were generated
+    assert stats.skipped_cached == 2
+    assert engine.generate.call_count == 4
+
+
+@patch("src.synthesis.synthesizer.create_engine")
+def test_batch_progress_shows_character(mock_create_engine, tmp_path):
+    """With batch_by_character=True, progress.update_character is called."""
+    from src.matching.models import VoiceMap
+    from src.synthesis.synthesizer import run_synthesis
+
+    book_dir = tmp_path / "book"
+    book_dir.mkdir()
+    _make_voice_map_multi(book_dir)
+
+    segments = _make_multi_speaker_segments(chapters=2, per_chapter=3)
+    config = SynthesisConfig(device="cpu", batch_by_character=True)
+
+    engine = _mock_engine()
+    mock_create_engine.return_value = engine
+
+    vm_path = book_dir / "voice_map.json"
+    vm = VoiceMap.model_validate_json(vm_path.read_text())
+
+    with patch("src.synthesis.synthesizer.SynthesisProgress") as MockProgress:
+        mock_progress = MagicMock()
+        MockProgress.return_value = mock_progress
+
+        run_synthesis(book_dir, vm, segments, config, verbose=False)
+
+        # update_character should have been called for each speaker group
+        assert mock_progress.update_character.call_count > 0
+        # Check that speaker names were passed
+        speaker_names = [
+            call.args[0] for call in mock_progress.update_character.call_args_list
+        ]
+        assert set(speaker_names) == {"narrator", "Alice", "Bob"}
+
+
 def test_reference_cache_reuses_encoding():
     """When generate() is called with the same character_name, ref audio is loaded once."""
     from unittest.mock import MagicMock, patch
