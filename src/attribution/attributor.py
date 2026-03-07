@@ -16,11 +16,12 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Callable
 
 from src.attribution.cache import check_cache, get_cache_key, write_cache
-from src.attribution.llm_client import CONTEXT_WINDOW, call_llm_structured
+from src.attribution.llm_client import CONTEXT_WINDOW, TruncationError, call_llm_structured, get_max_workers
 from src.attribution.models import (
     CharacterProfile,
     ChapterAttributionResult,
@@ -55,24 +56,27 @@ CONFIDENCE_FLAG_THRESHOLD = 0.7
 
 ATTRIBUTION_SYSTEM_PROMPT = """\
 You are a dialogue attribution specialist for audiobook production. \
-For each segment, identify who is speaking.
+You will receive a full chapter with all segments. Segments marked \
+[ATTRIBUTE] are dialogue lines that need speaker identification. \
+Use the full chapter context to track conversations and turn-taking.
 
 Character Registry (these are the characters in this book):
 {registry_json}
 
 Rules:
-- For dialogue segments: Identify the speaker from the character registry. \
+- Only return attributions for segments marked [ATTRIBUTE].
+- Identify the speaker from the character registry. \
 Use the canonical name from the registry.
-- For narration, chapter headings, and scene breaks: Set speaker to "narrator".
 - Internal monologue and thoughts: Set speaker to the CHARACTER \
 who is thinking (not narrator). These will be tagged as "thought" speech-act.
 - Group dialogue ("they all shouted"): Set speaker to "narrator".
 - When a dialogue line has no explicit tag ("said X"), infer the speaker from:
-  1. Turn-taking pattern (alternating speakers in conversation)
-  2. Surrounding narration context ("she turned to him" before a dialogue line)
+  1. Adjacent narration (e.g. a narration segment like "said Mr. Bennet" \
+right before or after the dialogue)
+  2. Turn-taking pattern (alternating speakers in conversation)
   3. Content/vocabulary matching known character speech patterns
 - Confidence scoring:
-  - 1.0: Explicit attribution ("X said") or non-dialogue (always narrator)
+  - 1.0: Explicit attribution ("X said") in adjacent narration
   - 0.8-0.99: Strong contextual evidence (clear turn-taking, adjacent narration)
   - 0.5-0.79: Moderate inference (conversation flow, some ambiguity)
   - 0.1-0.49: Weak guess (multiple candidates, little context)
@@ -137,10 +141,11 @@ def _build_dialogue_prompt(
     segments: list[dict],
     dialogue_indices: list[int],
 ) -> str:
-    """Build user prompt content with numbered dialogue segments and context.
+    """Build user prompt with full chapter text for conversation tracking.
 
-    Each dialogue segment is presented with its surrounding context (up to
-    2 segments before and after) to help the LLM infer the speaker.
+    Sends all segments in the chapter so the LLM can track turn-taking
+    across long conversations. Dialogue segments that need attribution
+    are marked with [ATTRIBUTE] tags.
 
     Args:
         segments: Full chapter segment list.
@@ -149,32 +154,18 @@ def _build_dialogue_prompt(
     Returns:
         Formatted prompt string for the LLM.
     """
+    dialogue_ids = {segments[idx]["id"] for idx in dialogue_indices}
     lines: list[str] = []
-    for idx in dialogue_indices:
-        seg = segments[idx]
-        lines.append(f"Segment {seg['id']} (type: {seg['type']}): {seg['text']}")
 
-        # Context before (up to 2 segments)
-        prev_context: list[str] = []
-        for offset in range(1, 3):
-            prev_idx = idx - offset
-            if prev_idx >= 0:
-                prev_seg = segments[prev_idx]
-                prev_context.insert(0, prev_seg.get("text", "")[:200])
-        if prev_context:
-            lines.append(f'[Context before: "{" | ".join(prev_context)}"]')
+    for seg in segments:
+        seg_id = seg["id"]
+        seg_type = seg.get("type", "narration")
+        text = seg.get("text", "")
 
-        # Context after (up to 2 segments)
-        next_context: list[str] = []
-        for offset in range(1, 3):
-            next_idx = idx + offset
-            if next_idx < len(segments):
-                next_seg = segments[next_idx]
-                next_context.append(next_seg.get("text", "")[:200])
-        if next_context:
-            lines.append(f'[Context after: "{" | ".join(next_context)}"]')
-
-        lines.append("")  # Blank line between segments
+        if seg_id in dialogue_ids:
+            lines.append(f"[ATTRIBUTE] Segment {seg_id} ({seg_type}): {text}")
+        else:
+            lines.append(f"Segment {seg_id} ({seg_type}): {text}")
 
     return "\n".join(lines)
 
@@ -287,11 +278,17 @@ def attribute_chapter(
             len(batch_prompt),
         )
 
-        result = call_llm_structured(
-            system_prompt,
-            batch_prompt,
-            ChapterAttributionResult,
-        )
+        try:
+            result = call_llm_structured(
+                system_prompt,
+                batch_prompt,
+                ChapterAttributionResult,
+            )
+        except TruncationError:
+            logger.warning(
+                "%s: output truncated, treating as failed", batch_label
+            )
+            result = None
 
         if result is None:
             logger.warning(
@@ -391,26 +388,40 @@ def attribute_all_segments(
     chapter_nums = sorted(chapters.keys())
     total = len(chapter_nums)
 
-    for chapter_num in chapter_nums:
+    max_workers = get_max_workers()
+
+    def _process_chapter(chapter_num: int) -> None:
         logger.info(
             "Attributing chapter %d/%d (%d segments)",
             chapter_num,
             total,
             len(chapters[chapter_num]),
         )
-
         attribute_chapter(
             chapters[chapter_num],
             characters,
             chapter_num,
             cache_dir,
         )
-
         # Run speech-act classification after attribution
         classify_speech_acts(chapters[chapter_num], chapter_num)
 
-        if progress_callback:
-            progress_callback(chapter_num, total)
+    if max_workers > 1:
+        completed = 0
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = {
+                pool.submit(_process_chapter, cn): cn for cn in chapter_nums
+            }
+            for future in as_completed(futures):
+                future.result()  # Raise any exceptions
+                completed += 1
+                if progress_callback:
+                    progress_callback(completed, total)
+    else:
+        for completed, chapter_num in enumerate(chapter_nums, 1):
+            _process_chapter(chapter_num)
+            if progress_callback:
+                progress_callback(completed, total)
 
     # Flatten back to original order (segments were modified in place)
     total_dialogue = sum(

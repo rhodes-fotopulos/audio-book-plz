@@ -123,7 +123,6 @@ def run_matching(
                 pitch="medium", pace="moderate", tone="neutral", accent="unknown"
             ),
             personality_traits=["clear", "measured"],
-            relationships=[],
             description="Book narrator",
             is_named=False,
         )

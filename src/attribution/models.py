@@ -41,22 +41,6 @@ class VoiceQualities(BaseModel):
     """Accent if mentioned: e.g. "British", "Southern American", "unknown"."""
 
 
-class Relationship(BaseModel):
-    """A relationship between two characters.
-
-    Used to help disambiguate dialogue in group scenes and to enrich
-    character profiles for downstream voice matching.
-    """
-
-    model_config = ConfigDict(strict=True)
-
-    character: str
-    """Name of the related character."""
-
-    relation: str
-    """Nature of the relationship: e.g. "mother", "rival", "employer"."""
-
-
 # ---------------------------------------------------------------------------
 # Character profile (registry entry + extraction result)
 # ---------------------------------------------------------------------------
@@ -93,7 +77,7 @@ class CharacterProfile(BaseModel):
 
     Used both as individual extraction results (per-chapter) and as entries
     in the merged character registry (characters.json). Rich profile per
-    user decision: gender, age, voice qualities, personality, relationships.
+    user decision: gender, age, voice qualities, personality.
     """
 
     model_config = ConfigDict(strict=True)
@@ -115,9 +99,6 @@ class CharacterProfile(BaseModel):
 
     personality_traits: list[str] = []
     """Key personality characteristics shown in the text."""
-
-    relationships: list[Relationship] = []
-    """Known relationships to other characters."""
 
     description: str
     """One-sentence character summary."""

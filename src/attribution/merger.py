@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from src.attribution.models import CharacterProfile, Relationship, VoiceQualities
+from src.attribution.models import CharacterProfile, VoiceQualities
 
 logger = logging.getLogger(__name__)
 
@@ -119,8 +119,7 @@ def _merge_two_profiles(
     """Merge two profiles determined to be the same character.
 
     The primary profile is preferred for most fields, but the longer/more
-    formal name is chosen as canonical. All aliases, traits, and
-    relationships are unioned.
+    formal name is chosen as canonical. All aliases and traits are unioned.
 
     Args:
         primary: The profile to prefer for name/description.
@@ -158,15 +157,6 @@ def _merge_two_profiles(
         primary.personality_traits + secondary.personality_traits
     ))
 
-    # Union of relationships (deduplicated by character+relation)
-    seen_rels: set[tuple[str, str]] = set()
-    all_rels: list[Relationship] = []
-    for rel in primary.relationships + secondary.relationships:
-        key = (rel.character.lower(), rel.relation.lower())
-        if key not in seen_rels:
-            seen_rels.add(key)
-            all_rels.append(rel)
-
     # Prefer is_named=True if either has it
     is_named = primary.is_named or secondary.is_named
 
@@ -189,7 +179,6 @@ def _merge_two_profiles(
         age_range=age_range,
         voice_qualities=merged_vq,
         personality_traits=all_traits,
-        relationships=all_rels,
         description=description,
         is_named=is_named,
     )

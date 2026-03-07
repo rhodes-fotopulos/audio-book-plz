@@ -11,11 +11,12 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Callable
 
 from src.attribution.cache import check_cache, get_cache_key, write_cache
-from src.attribution.llm_client import CONTEXT_WINDOW, call_llm_structured, estimate_tokens
+from src.attribution.llm_client import CONTEXT_WINDOW, TruncationError, call_llm_structured, estimate_tokens, get_max_workers
 from src.attribution.models import CharacterProfile, ChapterExtractionResult
 
 logger = logging.getLogger(__name__)
@@ -27,7 +28,7 @@ logger = logging.getLogger(__name__)
 SYSTEM_PROMPT_TOKENS = 500
 """Budget for system message overhead in tokens."""
 
-RESPONSE_BUDGET = 4096
+RESPONSE_BUDGET = 16384
 """Maximum tokens reserved for LLM response."""
 
 AVAILABLE_FOR_CONTENT = CONTEXT_WINDOW - SYSTEM_PROMPT_TOKENS - RESPONSE_BUDGET
@@ -45,13 +46,15 @@ Extract ALL characters from the provided chapter text.
 
 For each character found:
 - name: The character's most commonly used name in this chapter
-- aliases: Any other names, titles, or references used for this character
+- aliases: Other names, titles, or forms of address used FOR THIS SAME PERSON \
+(e.g. "Mr. Darcy" / "Fitzwilliam" / "Darcy"). Do NOT include names of other \
+characters they speak to, write to, or mention. Letter salutations like \
+"Dearest Jane" belong to Jane, not to the letter's author.
 - gender: male, female, non-binary, or unknown
 - age_range: child, young adult, middle-aged, elderly, or unknown
 - voice_qualities: Infer pitch, pace, tone, and accent from text descriptions \
 and dialogue style
 - personality_traits: Key personality characteristics shown in this chapter
-- relationships: Known relationships to other characters
 - description: One-sentence character summary
 - is_named: true if character has a proper name, false if referred to by \
 description only (e.g. "the bartender")
@@ -69,8 +72,14 @@ with is_named=false
 - Infer voice qualities from context: "the old man grumbled" implies elderly \
 male, low pitch, slow pace, gruff tone
 - Infer voice_baseline from dialogue style, narration descriptions, and personality
-- Include character relationships when evident from text
-- When unsure about a trait, use "unknown" — do not guess without textual evidence"""
+- When unsure about a trait, use "unknown" — do not guess without textual evidence
+- CRITICAL: A character's aliases must only be names for THAT SAME PERSON. \
+Never list another character's name as an alias. If character A writes a letter \
+to character B, "B" is NOT an alias of A.
+- Do NOT use pronoun-based references as aliases (e.g. "his sister", "my father", \
+"her master", "your friend"). These are ambiguous and could refer to multiple \
+characters. Only use proper names, titles, or unique descriptors \
+(e.g. "Mr. Darcy", "Miss Bingley", "the housekeeper")."""
 
 
 # ---------------------------------------------------------------------------
@@ -186,6 +195,42 @@ def _split_chapter_text(chapter_text: str, max_chars: int) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
+def _extract_chunk(chunk: str, label: str) -> list[CharacterProfile]:
+    """Extract characters from a text chunk, auto-splitting on truncation.
+
+    If the LLM output is truncated (too many characters for the context
+    window), recursively splits the chunk in half and retries each sub-chunk.
+
+    Args:
+        chunk: Text to extract characters from.
+        label: Human-readable label for logging (e.g., "Chapter 19").
+
+    Returns:
+        List of CharacterProfile objects found in this chunk.
+    """
+    try:
+        result = call_llm_structured(
+            EXTRACTION_SYSTEM_PROMPT,
+            chunk,
+            ChapterExtractionResult,
+        )
+        if result is None:
+            logger.warning("%s: extraction failed after retries", label)
+            return []
+        return list(result.characters)
+    except TruncationError:
+        if len(chunk) <= MIN_CHUNK_CHARS * 2:
+            logger.warning("%s: truncated but too small to split further", label)
+            return []
+        logger.info("%s: output truncated, splitting and retrying", label)
+        sub_chunks = _split_chapter_text(chunk, len(chunk) // 2)
+        characters: list[CharacterProfile] = []
+        for j, sub in enumerate(sub_chunks):
+            sub_label = f"{label} sub-{j + 1}/{len(sub_chunks)}"
+            characters.extend(_extract_chunk(sub, sub_label))
+        return characters
+
+
 def extract_characters_from_chapter(
     chapter_text: str,
     chapter_num: int,
@@ -194,6 +239,8 @@ def extract_characters_from_chapter(
     """Extract character profiles from a single chapter via LLM.
 
     Checks cache first, splits oversized chapters, and caches results.
+    If extraction is truncated, automatically splits the chapter into
+    smaller chunks and retries.
 
     Args:
         chapter_text: Formatted chapter text from _build_chapter_text().
@@ -220,18 +267,7 @@ def extract_characters_from_chapter(
             else f"Chapter {chapter_num} chunk {i + 1}/{len(chunks)}"
         )
         logger.info("Extracting characters from %s (%d chars)", chunk_label, len(chunk))
-
-        result = call_llm_structured(
-            EXTRACTION_SYSTEM_PROMPT,
-            chunk,
-            ChapterExtractionResult,
-        )
-
-        if result is None:
-            logger.warning("%s: LLM extraction failed after retries", chunk_label)
-            continue
-
-        all_characters.extend(result.characters)
+        all_characters.extend(_extract_chunk(chunk, chunk_label))
 
     # Cache the result
     cache_data = [c.model_dump() for c in all_characters]
@@ -271,21 +307,38 @@ def extract_all_characters(
     total = len(chapter_nums)
     result: dict[int, list[CharacterProfile]] = {}
 
-    for chapter_num in chapter_nums:
+    max_workers = get_max_workers()
+
+    def _process_chapter(chapter_num: int) -> tuple[int, list[CharacterProfile]]:
         chapter_text = _build_chapter_text(chapters[chapter_num])
         token_estimate = estimate_tokens(chapter_text)
         logger.info(
             "Chapter %d: %d segments, ~%d tokens",
             chapter_num, len(chapters[chapter_num]), token_estimate,
         )
-
         characters = extract_characters_from_chapter(
             chapter_text, chapter_num, cache_dir
         )
-        result[chapter_num] = characters
+        return chapter_num, characters
 
-        if progress_callback:
-            progress_callback(chapter_num, total)
+    if max_workers > 1:
+        completed = 0
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = {
+                pool.submit(_process_chapter, cn): cn for cn in chapter_nums
+            }
+            for future in as_completed(futures):
+                chapter_num, characters = future.result()
+                result[chapter_num] = characters
+                completed += 1
+                if progress_callback:
+                    progress_callback(completed, total)
+    else:
+        for completed, chapter_num in enumerate(chapter_nums, 1):
+            chapter_num, characters = _process_chapter(chapter_num)
+            result[chapter_num] = characters
+            if progress_callback:
+                progress_callback(completed, total)
 
     total_chars = sum(len(chars) for chars in result.values())
     logger.info(

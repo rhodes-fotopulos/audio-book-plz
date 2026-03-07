@@ -334,6 +334,97 @@ def _find_word_split(text: str, target_pos: int) -> int | None:
 
 
 # ---------------------------------------------------------------------------
+# Dialogue / narration splitting
+# ---------------------------------------------------------------------------
+
+# Quote characters that open dialogue
+_OPEN_QUOTES = {'"', '\u201c', '\u2018'}
+# Quote characters that close dialogue
+_CLOSE_QUOTES = {'"', '\u201d', '\u2019'}
+
+
+def _split_dialogue_narration(text: str) -> list[tuple[SegmentType, str]]:
+    """Split a dialogue block into alternating dialogue and narration parts.
+
+    Handles patterns like:
+      "Hello," said X, "goodbye." → [dialogue, narration, dialogue]
+      "Hello," said X.            → [dialogue, narration]
+      X said, "Hello."            → [narration, dialogue]
+
+    For straight quotes ("), alternates between open and close.
+    For curly quotes (\u201c/\u201d), uses explicit open/close characters.
+
+    Args:
+        text: Text classified as dialogue by classify_block().
+
+    Returns:
+        List of (SegmentType, text) tuples. Returns the original text
+        as a single dialogue segment if no splitting is possible.
+    """
+    has_curly = '\u201c' in text or '\u201d' in text
+
+    parts: list[tuple[SegmentType, str]] = []
+    current: list[str] = []
+    in_quote = False
+
+    i = 0
+    while i < len(text):
+        ch = text[i]
+
+        if has_curly:
+            if not in_quote and ch == '\u201c':
+                # Flush narration before this quote
+                narr = ''.join(current).strip()
+                if narr:
+                    parts.append((SegmentType.NARRATION, narr))
+                current = [ch]
+                in_quote = True
+            elif in_quote and ch == '\u201d':
+                current.append(ch)
+                dial = ''.join(current).strip()
+                if dial:
+                    parts.append((SegmentType.DIALOGUE, dial))
+                current = []
+                in_quote = False
+            else:
+                current.append(ch)
+        else:
+            # Straight quotes — alternate open/close
+            if ch == '"':
+                if not in_quote:
+                    # Opening quote — flush preceding narration
+                    narr = ''.join(current).strip()
+                    if narr:
+                        parts.append((SegmentType.NARRATION, narr))
+                    current = [ch]
+                    in_quote = True
+                else:
+                    # Closing quote
+                    current.append(ch)
+                    dial = ''.join(current).strip()
+                    if dial:
+                        parts.append((SegmentType.DIALOGUE, dial))
+                    current = []
+                    in_quote = False
+            else:
+                current.append(ch)
+
+        i += 1
+
+    # Flush remaining text
+    remaining = ''.join(current).strip()
+    if remaining:
+        seg_type = SegmentType.DIALOGUE if in_quote else SegmentType.NARRATION
+        parts.append((seg_type, remaining))
+
+    # If splitting produced only one part, return as-is (no benefit to splitting)
+    if len(parts) <= 1:
+        return [(SegmentType.DIALOGUE, text)]
+
+    return parts
+
+
+# ---------------------------------------------------------------------------
 # Orchestrator
 # ---------------------------------------------------------------------------
 
@@ -362,24 +453,31 @@ def process_chapter_blocks(
     for tag_name, text, attrs in blocks:
         seg_type, dialogue_open = classify_block(tag_name, text, attrs, dialogue_open)
 
-        # Split text into sub-segments respecting the character limit
-        sub_texts = split_to_segments(text, seg_type)
+        # For dialogue blocks, split out narration tags (e.g. "said X")
+        if seg_type == SegmentType.DIALOGUE:
+            typed_parts = _split_dialogue_narration(text)
+        else:
+            typed_parts = [(seg_type, text)]
 
-        # If no text (e.g. hr tag), still produce one segment for the structural marker
-        if not sub_texts:
-            sub_texts = [text.strip()]
+        for part_type, part_text in typed_parts:
+            # Split text into sub-segments respecting the character limit
+            sub_texts = split_to_segments(part_text, part_type)
 
-        for sub_text in sub_texts:
-            segment = Segment(
-                id=current_id,
-                chapter=chapter_num,
-                chapter_title=chapter_title,
-                type=seg_type,
-                text=sub_text,
-                char_count=len(sub_text),
-            )
-            segments.append(segment)
-            current_id += 1
+            # If no text (e.g. hr tag), still produce one segment for the structural marker
+            if not sub_texts:
+                sub_texts = [part_text.strip()]
+
+            for sub_text in sub_texts:
+                segment = Segment(
+                    id=current_id,
+                    chapter=chapter_num,
+                    chapter_title=chapter_title,
+                    type=part_type,
+                    text=sub_text,
+                    char_count=len(sub_text),
+                )
+                segments.append(segment)
+                current_id += 1
 
     # Reset dialogue state at chapter end (state is local, not returned)
     return segments
