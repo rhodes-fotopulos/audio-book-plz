@@ -52,26 +52,27 @@ characters they speak to, write to, or mention. Letter salutations like \
 "Dearest Jane" belong to Jane, not to the letter's author.
 - gender: male, female, non-binary, or unknown
 - age_range: child, young adult, middle-aged, elderly, or unknown
-- voice_qualities: Infer pitch, pace, tone, and accent from text descriptions \
-and dialogue style
+- voice_profile: Unified voice description with 9 fields:
+  - pitch: Vocal pitch ("high", "medium", "low", or "unknown")
+  - pace: Speech pace ("fast", "moderate", "slow", or "unknown")
+  - tone: Vocal tone (e.g. "warm", "gruff", "silky", "monotone", or "unknown")
+  - accent: Accent if mentioned (e.g. "British", "Southern American", or "unknown")
+  - pace_style: Nuanced speaking style (e.g. "measured", "rapid", "clipped", or "unknown")
+  - tone_style: Nuanced vocal quality (e.g. "gravelly", "melodic", "breathy", or "unknown")
+  - energy: Energy level (e.g. "restrained", "animated", or "unknown")
+  - typical_emotion: Default emotional register (e.g. "sardonic", "cheerful", or "unknown")
+  - description: One-sentence voice summary
 - personality_traits: Key personality characteristics shown in this chapter
 - description: One-sentence character summary
 - is_named: true if character has a proper name, false if referred to by \
 description only (e.g. "the bartender")
-- voice_baseline: Default speaking style with 5 fields:
-  - pace: How fast they typically speak (e.g. "measured", "rapid", "languid", "clipped")
-  - tone: Quality of their voice (e.g. "warm", "gravelly", "melodic", "flat", "breathy")
-  - energy: How animated they are (e.g. "restrained", "animated", "intense", "subdued")
-  - typical_emotion: Default emotional register (e.g. "sardonic", "cheerful", "weary")
-  - description: One-sentence voice summary (e.g. "A slow, gravelly voice with weary patience")
 
 Rules:
 - Extract EVERY character who speaks or is mentioned by name, no matter how minor
 - For unnamed speakers (e.g. "the old man", "a soldier"), create profiles \
 with is_named=false
-- Infer voice qualities from context: "the old man grumbled" implies elderly \
+- Infer voice_profile from context: "the old man grumbled" implies elderly \
 male, low pitch, slow pace, gruff tone
-- Infer voice_baseline from dialogue style, narration descriptions, and personality
 - When unsure about a trait, use "unknown" — do not guess without textual evidence
 - CRITICAL: A character's aliases must only be names for THAT SAME PERSON. \
 Never list another character's name as an alias. If character A writes a letter \
