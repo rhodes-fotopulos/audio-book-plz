@@ -103,18 +103,34 @@ def _build_character_description(character: CharacterProfile) -> str:
     parts.append(f"Gender: {character.gender}")
     parts.append(f"Age: {character.age_range}")
 
-    vq = character.voice_qualities
+    vp = character.voice_profile
     voice_parts = []
-    if vq.pitch != "unknown":
-        voice_parts.append(f"{vq.pitch} pitch")
-    if vq.pace != "unknown":
-        voice_parts.append(f"{vq.pace} pace")
-    if vq.tone != "unknown":
-        voice_parts.append(f"{vq.tone} tone")
-    if vq.accent != "unknown":
-        voice_parts.append(f"{vq.accent} accent")
+    if vp.pitch != "unknown":
+        voice_parts.append(f"{vp.pitch} pitch")
+    if vp.pace != "unknown":
+        voice_parts.append(f"{vp.pace} pace")
+    if vp.tone != "unknown":
+        voice_parts.append(f"{vp.tone} tone")
+    if vp.accent != "unknown":
+        voice_parts.append(f"{vp.accent} accent")
     if voice_parts:
         parts.append(f"Voice: {', '.join(voice_parts)}")
+
+    # Rich descriptors for LLM casting nuance
+    style_parts = []
+    if vp.pace_style != "unknown":
+        style_parts.append(f"{vp.pace_style} speaking style")
+    if vp.tone_style != "unknown":
+        style_parts.append(f"{vp.tone_style} vocal quality")
+    if vp.energy != "unknown":
+        style_parts.append(f"{vp.energy} energy")
+    if vp.typical_emotion != "unknown":
+        style_parts.append(f"typically {vp.typical_emotion}")
+    if style_parts:
+        parts.append(f"Style: {', '.join(style_parts)}")
+
+    if vp.description and vp.description != "unknown":
+        parts.append(f"Voice summary: {vp.description}")
 
     if character.personality_traits:
         parts.append(f"Personality: {', '.join(character.personality_traits)}")
