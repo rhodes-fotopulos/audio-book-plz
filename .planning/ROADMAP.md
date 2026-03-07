@@ -35,7 +35,7 @@
 **Milestone Goal:** Unify voice data model, remove unused emotion system, cache LLM matching results, and optimize synthesis performance.
 
 - [x] **Phase 11: Data Model Unification and Voice Matching** - Unified VoiceProfile replaces duplicated fields; matchers consume richer voice data (completed 2026-03-07)
-- [ ] **Phase 12: Emotion Removal and LLM Optimization** - Pipeline simplified by removing unused emotion system; speech-act post-processing and LLM refinement made opt-in; trait matcher results cached
+- [x] **Phase 12: Emotion Removal and LLM Optimization** - Pipeline simplified by removing unused emotion system; speech-act post-processing and LLM refinement made opt-in; trait matcher results cached (completed 2026-03-07)
 - [ ] **Phase 13: Synthesis Performance** - Reference caching and batch-by-character ordering for faster synthesis runs
 
 ## Phase Details
@@ -99,7 +99,7 @@ Phases execute in numeric order: 11 -> 12 -> 13
 | 9. Production Polish | v1.1 | 3/3 | Complete | 2026-03-04 |
 | 10. Verification & CLI Wiring Fixes | v1.1 | 3/3 | Complete | 2026-03-04 |
 | 11. Data Model Unification and Voice Matching | v1.2 | 2/2 | Complete | 2026-03-07 |
-| 12. Emotion Removal and LLM Optimization | v1.2 | 2/2 | Complete | 2026-03-07 |
+| 12. Emotion Removal and LLM Optimization | v1.2 | Complete    | 2026-03-07 | 2026-03-07 |
 | 13. Synthesis Performance | v1.2 | 0/? | Not started | - |
 
 ---
