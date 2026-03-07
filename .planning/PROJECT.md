@@ -8,20 +8,17 @@ A local Python app that converts EPUB files into multi-voice audiobooks (.mp3). 
 
 Feed in an EPUB, get out a multi-voice audiobook where each character has a distinct, fitting voice cloned from a real human recording.
 
-## Current Milestone: v1.1 Pipeline Quality Improvements
+## Current Milestone: v1.2 Voice Expression
 
-**Goal:** Upgrade the audiobook pipeline with a better TTS engine (Qwen3-TTS via MLX), emotional narration control, improved dialogue detection, and professional post-processing.
+**Goal:** Wire the extracted voice and emotion data into TTS synthesis so each character sounds consistently styled, scenes carry emotional weight, and the duplicated voice fields are unified.
 
 **Target features:**
-- Swap Chatterbox → Qwen3-TTS 1.7B (MLX, Apple Silicon native)
-- Increase chunk size (~280 → ~500-600 chars)
-- Longer voice references (10s → 20-30s)
-- LLM model upgrade for attribution (qwen3:14b or 8b Q8_0)
-- Three-layer emotion system (character baseline + scene mood + line overrides)
-- LLM-based dialogue detection (replace regex)
-- Randomized pause timing
-- Post-processing pipeline (segment + chapter level)
-- Voice consistency pass (embedding-based drift detection)
+- Merge voice_qualities + voice_baseline into single voice_profile (eliminate duplication)
+- Feed voice_profile description to Qwen3-TTS as style conditioning per character
+- Use voice_profile attributes in voice matching (trait_matcher, embedding_matcher)
+- Feed scene mood to TTS for emotional context per segment
+- Feed line-level emotion overrides to TTS for high-contrast moments
+- Three-layer TTS conditioning: voice_profile (constant) + scene mood (varies) + line override (rare)
 
 ## Requirements
 
@@ -48,6 +45,14 @@ Feed in an EPUB, get out a multi-voice audiobook where each character has a dist
 - ✓ Randomized Gaussian pause timing with context-aware ranges (5 boundary types) — Phase 9
 - ✓ Post-processing pipeline: noise gate, compress, highpass EQ, limiter, crossfade, 44.1kHz 192kbps ACX export — Phase 9
 - ✓ Voice consistency pass: Resemblyzer embedding comparison to detect and regenerate drifted segments — Phase 9
+
+### Active
+
+- [ ] Unified voice_profile field replacing voice_qualities and voice_baseline
+- [ ] Voice style conditioning passed to Qwen3-TTS per character
+- [ ] Scene mood emotion data fed to TTS synthesis
+- [ ] Line-level emotion overrides fed to TTS synthesis
+- [ ] Voice matching uses unified voice_profile for better speaker selection
 
 ### Future
 
@@ -112,4 +117,4 @@ Hardware: M4 Mac with 16GB unified memory. LLM and TTS run in separate phases wi
 | Speech-act post-processing over TTS instruct | Base model ignores instruct prompts with cloned voices; post-process volume/speed instead | ✓ Good — reliable with any voice reference |
 
 ---
-*Last updated: 2026-03-04 after v1.1 milestone complete*
+*Last updated: 2026-03-06 after v1.2 milestone started*
