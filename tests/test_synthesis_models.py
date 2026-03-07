@@ -98,6 +98,18 @@ def test_mark_completed_removes_from_failed():
     assert "5" not in cp["failed"]
 
 
+def test_batch_by_character_config_default():
+    """SynthesisConfig().batch_by_character is False by default."""
+    config = SynthesisConfig()
+    assert config.batch_by_character is False
+
+
+def test_batch_by_character_config_set():
+    """SynthesisConfig(batch_by_character=True).batch_by_character is True."""
+    config = SynthesisConfig(batch_by_character=True)
+    assert config.batch_by_character is True
+
+
 def test_get_pending_segments():
     """get_pending_segments filters out completed segments."""
     config = SynthesisConfig()
