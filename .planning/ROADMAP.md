@@ -79,7 +79,7 @@ Plans:
   1. Voice reference encoding is computed once per character and reused across all that character's segments (visible in logs, measurable time reduction)
   2. Running with --batch-by-character synthesizes all segments for each character consecutively, then stitches output back into chapter order
   3. Final audiobook output is identical regardless of whether --batch-by-character is used (ordering is a synthesis optimization, not an output change)
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 Plans:
 - [ ] 13-01-PLAN.md -- Reference encoding cache per character (SYNTH-05)
@@ -104,7 +104,7 @@ Phases execute in numeric order: 11 -> 12 -> 13
 | 10. Verification & CLI Wiring Fixes | v1.1 | 3/3 | Complete | 2026-03-04 |
 | 11. Data Model Unification and Voice Matching | v1.2 | 2/2 | Complete | 2026-03-07 |
 | 12. Emotion Removal and LLM Optimization | v1.2 | Complete    | 2026-03-07 | 2026-03-07 |
-| 13. Synthesis Performance | v1.2 | 0/2 | Not started | - |
+| 13. Synthesis Performance | 1/2 | In Progress|  | - |
 
 ---
 *Roadmap created: 2026-03-03*
