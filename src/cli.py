@@ -103,6 +103,11 @@ def convert(
         "--batch-by-character",
         help="Synthesize per-character (all segments for each voice consecutively) instead of chapter-by-chapter",
     ),
+    clean_voices: bool = typer.Option(
+        False,
+        "--clean-voices",
+        help="Delete cached LibriTTS-R voice reference clips after synthesis completes",
+    ),
 ) -> None:
     """Run full pipeline: parse -> attribute -> match -> synthesize -> assemble."""
     if epub_file.suffix.lower() != ".epub":
@@ -138,6 +143,11 @@ def convert(
         speech_act_fx=speech_act_fx,
         batch_by_character=batch_by_character,
     )
+
+    if clean_voices:
+        from src.matching.audio_downloader import clean_voice_cache
+
+        clean_voice_cache()
 
 
 @app.command()
@@ -405,6 +415,14 @@ def verify_voices(
     rprint("\n[bold green]Voice Consistency Check[/bold green]")
     report_path = run_voice_check(book_dir, voice_threshold=voice_threshold)
     rprint(f"\n  Report: [cyan]{report_path}[/cyan]")
+
+
+@app.command(name="clean-voices")
+def clean_voices_cmd() -> None:
+    """Delete cached LibriTTS-R voice reference clips (~/.local/share/libritts-r/audio/)."""
+    from src.matching.audio_downloader import clean_voice_cache
+
+    clean_voice_cache()
 
 
 @app.command()

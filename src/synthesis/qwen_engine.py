@@ -59,13 +59,17 @@ class QwenTTSEngine(TTSEngineBase):
 
         # Set Metal cache limit before loading model
         cache_bytes = int(self.config.mlx_cache_limit_gb * 1024**3)
-        mx.metal.set_cache_limit(cache_bytes)
+        mx.set_cache_limit(cache_bytes)
         logger.info(
             "MLX Metal cache limit set to %.1f GB", self.config.mlx_cache_limit_gb
         )
 
         logger.info("Loading Qwen3-TTS 1.7B Base from %s...", _MODEL_ID)
-        self.model = load_model(_MODEL_ID)
+        import warnings
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message=".*model of type qwen3_tts.*")
+            warnings.filterwarnings("ignore", message=".*fix_mistral_regex.*")
+            self.model = load_model(_MODEL_ID)
 
         self._sample_rate = getattr(self.model, "sample_rate", None)
         if self._sample_rate is None or self._sample_rate <= 0:
@@ -176,10 +180,10 @@ class QwenTTSEngine(TTSEngineBase):
         """Clear MLX Metal cache and log memory stats."""
         import mlx.core as mx
 
-        mx.metal.clear_cache()
+        mx.clear_cache()
 
-        active_mb = mx.metal.get_active_memory() / (1024**2)
-        peak_mb = mx.metal.get_peak_memory() / (1024**2)
+        active_mb = mx.get_active_memory() / (1024**2)
+        peak_mb = mx.get_peak_memory() / (1024**2)
         logger.debug(
             "MLX memory after cleanup: active=%.1f MB, peak=%.1f MB",
             active_mb,

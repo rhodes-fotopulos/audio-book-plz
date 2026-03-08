@@ -41,7 +41,7 @@ class SynthesisConfig:
     """MLX Metal cache limit in GB.  On 16GB machine, 4GB leaves room for OS."""
 
     mlx_cleanup_interval: int = 50
-    """Run mx.metal.clear_cache() every N segments (Qwen3-TTS)."""
+    """Run mx.clear_cache() every N segments (Qwen3-TTS)."""
 
     # WAV validation
     min_wav_duration_s: float = 0.1
