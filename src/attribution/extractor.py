@@ -42,7 +42,7 @@ MIN_CHUNK_CHARS = 1000
 
 EXTRACTION_SYSTEM_PROMPT = """\
 You are a character extraction specialist for audiobook production. \
-Extract ALL characters from the provided chapter text.
+Extract ONLY characters who SPEAK dialogue from the provided chapter text.
 
 For each character found:
 - name: The character's most commonly used name in this chapter
@@ -68,7 +68,11 @@ characters they speak to, write to, or mention. Letter salutations like \
 description only (e.g. "the bartender")
 
 Rules:
-- Extract EVERY character who speaks or is mentioned by name, no matter how minor
+- Extract ONLY characters who have dialogue lines marked with [DIALOGUE]. \
+Do NOT extract characters who are merely mentioned, described, or written \
+about but never speak.
+- Characters referenced only in narration or spoken about by others but who \
+never speak themselves in this chapter should NOT be included.
 - For unnamed speakers (e.g. "the old man", "a soldier"), create profiles \
 with is_named=false
 - Infer voice_profile from context: "the old man grumbled" implies elderly \
@@ -252,7 +256,7 @@ def extract_characters_from_chapter(
         List of CharacterProfile objects found in this chapter.
     """
     # Check cache
-    cache_key = get_cache_key(chapter_text, "extraction")
+    cache_key = get_cache_key(chapter_text, "extraction_v2")
     cached = check_cache(cache_dir, cache_key)
     if cached is not None:
         logger.info("Chapter %d: cache hit, skipping LLM call", chapter_num)

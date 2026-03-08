@@ -200,6 +200,26 @@ class AttributedSegment(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class DuplicateGroup(BaseModel):
+    """A group of character indices identified as the same person by LLM consolidation."""
+
+    indices: list[int]
+    """Indices of profiles that are the same character."""
+
+    canonical_index: int
+    """Index of the profile to use as the canonical/primary entry."""
+
+    reasoning: str
+    """Explanation of why these profiles are the same character."""
+
+
+class ConsolidationResult(BaseModel):
+    """LLM response schema for character consolidation/deduplication."""
+
+    groups: list[DuplicateGroup]
+    """Groups of duplicate characters. Empty list if no duplicates found."""
+
+
 class SpeechActTag(BaseModel):
     """Classification result for a single segment's speech-act.
 

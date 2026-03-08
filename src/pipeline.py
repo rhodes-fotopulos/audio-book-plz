@@ -216,6 +216,41 @@ def run_attribute(
     with open(attributed_path, "w", encoding="utf-8") as f:
         json.dump(attributed_segments, f, indent=2, ensure_ascii=False)
 
+    # --- Post-attribution dialogue filter ---
+    # Remove characters who have zero dialogue lines in the attributed output
+    speaker_counts: dict[str, int] = {}
+    for seg in attributed_segments:
+        if seg.get("type") == "dialogue":
+            speaker = seg.get("speaker", "").lower().strip()
+            if speaker and speaker not in ("narrator", "unknown"):
+                speaker_counts[speaker] = speaker_counts.get(speaker, 0) + 1
+
+    speaking_characters = []
+    filtered_count = 0
+    for char in characters:
+        # Check if canonical name or any alias has dialogue
+        all_names = {char.name.lower().strip()}
+        all_names.update(a.lower().strip() for a in char.aliases)
+        has_dialogue = any(name in speaker_counts for name in all_names)
+
+        if has_dialogue:
+            speaking_characters.append(char)
+        else:
+            filtered_count += 1
+
+    if filtered_count > 0 and speaking_characters:
+        characters = speaking_characters
+        with open(characters_path, "w", encoding="utf-8") as f:
+            json.dump(
+                [profile.model_dump() for profile in characters],
+                f,
+                indent=2,
+                ensure_ascii=False,
+            )
+        logger.info(
+            "Filtered %d non-speaking characters from registry", filtered_count
+        )
+
     # --- Unload model ---
     unload_model()
 
@@ -499,6 +534,14 @@ def run_synthesize(
         rprint(table)
         return wavs_dir
 
+    # ---- Auto-download voice references if needed ----
+    if libritts_audio_dir is None:
+        from src.matching.audio_downloader import download_voice_clips
+
+        voice_map_path = book_dir / "voice_map.json"
+        if voice_map_path.exists():
+            libritts_audio_dir = download_voice_clips(voice_map_path)
+
     # ---- Build config ----
     config = SynthesisConfig(
         device="cpu" if cpu else "auto",
@@ -774,6 +817,15 @@ def run_full_pipeline(
         auto_confirm=True,  # No interactive prompt in pipeline mode
         model_override=model_override,
     )
+
+    # Auto-download LibriTTS-R reference clips if not provided
+    if libritts_audio_dir is None:
+        rprint("\n[bold green]Phase 3.5: Download Voice References[/bold green]")
+        from src.matching.audio_downloader import download_voice_clips
+
+        voice_map_path = output_book_dir / "voice_map.json"
+        if voice_map_path.exists():
+            libritts_audio_dir = download_voice_clips(voice_map_path)
 
     rprint("\n[bold green]Phase 4: Synthesize[/bold green]")
     run_synthesize(
