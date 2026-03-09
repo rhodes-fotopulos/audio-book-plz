@@ -42,7 +42,7 @@
 
 ### v1.3 Voice Quality (In Progress)
 
-- [ ] **Phase 14: Character Profile Merger Hardening** - Eliminate false-positive merges with cross-name exclusion, co-occurrence guards, and full audit trail
+- [x] **Phase 14: Character Profile Merger Hardening** - Eliminate false-positive merges with cross-name exclusion, co-occurrence guards, and full audit trail (completed 2026-03-09)
 - [ ] **Phase 15: Opinionated Profiles and Expressive Clips** - Push characters apart with distinctive voice profiles and select reference clips by expressiveness
 
 ## Phase Details
@@ -98,7 +98,7 @@ Phases execute in numeric order: 14 -> 15
 | 11. Data Model Unification and Voice Matching | v1.2 | 2/2 | Complete | 2026-03-07 |
 | 12. Emotion Removal and LLM Optimization | v1.2 | 2/2 | Complete | 2026-03-07 |
 | 13. Synthesis Performance | v1.2 | 2/2 | Complete | 2026-03-07 |
-| 14. Character Profile Merger Hardening | 1/2 | In Progress|  | - |
+| 14. Character Profile Merger Hardening | 2/2 | Complete   | 2026-03-09 | - |
 | 15. Opinionated Profiles and Expressive Clips | v1.3 | 0/? | Not started | - |
 
 ---
