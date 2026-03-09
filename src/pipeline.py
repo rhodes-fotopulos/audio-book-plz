@@ -180,7 +180,9 @@ def run_attribute(
 
     # --- Merge pass ---
     rprint("[bold cyan]Merging character profiles...[/bold cyan]")
-    characters = merge_characters(chapter_characters, cache_dir)
+    characters, merge_audit = merge_characters(
+        chapter_characters, cache_dir, book_title=book_dir.name
+    )
 
     # --- Write characters.json ---
     characters_path = book_dir / "characters.json"
@@ -191,6 +193,19 @@ def run_attribute(
             indent=2,
             ensure_ascii=False,
         )
+
+    # --- Write merge_audit.json ---
+    audit_path = book_dir / "merge_audit.json"
+    with open(audit_path, "w", encoding="utf-8") as f:
+        json.dump(merge_audit.model_dump(), f, indent=2, ensure_ascii=False)
+    rprint(f"[dim]Merge audit: {audit_path}[/dim]")
+
+    # --- Merge warnings summary ---
+    total_decisions = sum(len(decs) for decs in merge_audit.stages.values())
+    if merge_audit.warnings:
+        rprint(f"[yellow]Merge warnings: {len(merge_audit.warnings)}[/yellow]")
+        for w in merge_audit.warnings:
+            rprint(f"  [yellow]{w}[/yellow]")
 
     # --- Attribution pass ---
     rprint("[bold cyan]Attributing speakers...[/bold cyan]")
