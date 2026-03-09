@@ -67,6 +67,25 @@ characters they speak to, write to, or mention. Letter salutations like \
 - is_named: true if character has a proper name, false if referred to by \
 description only (e.g. "the bartender")
 
+WRONG examples (DO NOT do this):
+- Mrs. Bennet with aliases=["Elizabeth", "Jane", "Lydia"]
+  (These are her DAUGHTERS, not aliases for Mrs. Bennet)
+- Mr. Darcy with aliases=["Miss Darcy", "Georgiana"]
+  (Miss Darcy/Georgiana is his SISTER, a separate character)
+- Elizabeth with aliases=["Mrs. Bennet"]
+  (Mrs. Bennet is Elizabeth's MOTHER, not an alias)
+- "the doctor" with aliases=["Dr. Smith"]
+  (Only merge if the text confirms they are the same person)
+- Letter recipients: "Dear Jane" in a letter FROM Elizabeth does NOT make \
+Jane an alias of Elizabeth
+
+RIGHT examples:
+- Elizabeth Bennet with aliases=["Lizzy", "Eliza", "Miss Bennet"]
+  (These are all names for the same person)
+- Mr. Darcy with aliases=["Fitzwilliam Darcy", "Darcy"]
+  (These are all names for the same person)
+- Mrs. Bennet with aliases=[] (no aliases -- other Bennets are separate characters)
+
 Rules:
 - Extract ONLY characters who have dialogue lines marked with [DIALOGUE]. \
 Do NOT extract characters who are merely mentioned, described, or written \
@@ -256,7 +275,7 @@ def extract_characters_from_chapter(
         List of CharacterProfile objects found in this chapter.
     """
     # Check cache
-    cache_key = get_cache_key(chapter_text, "extraction_v2")
+    cache_key = get_cache_key(chapter_text, "extraction_v3")
     cached = check_cache(cache_dir, cache_key)
     if cached is not None:
         logger.info("Chapter %d: cache hit, skipping LLM call", chapter_num)
