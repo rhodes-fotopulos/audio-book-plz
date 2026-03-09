@@ -13,6 +13,9 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from src.attribution.models import VoiceProfile
+from src.matching.audio_analyzer import analyze_clip, get_target_rate, score_clip
+
 logger = logging.getLogger(__name__)
 
 # Minimum file size for a usable reference clip (~5 seconds at 24kHz mono 16-bit)
@@ -32,16 +35,24 @@ def _duration_from_size(file_size: int) -> float:
     return file_size / _BYTES_PER_SECOND
 
 
-def select_reference_clip(speaker_id: str, libritts_root: Path) -> str | None:
+def select_reference_clip(
+    speaker_id: str,
+    libritts_root: Path,
+    voice_profile: VoiceProfile | None = None,
+) -> str | None:
     """Select the best WAV file for a speaker from LibriTTS-R.
 
-    Targets clips closest to 12.5 seconds (midpoint of 10-15s range)
-    for optimal Qwen3-TTS voice cloning.  Falls back to the longest
-    clip under 25 seconds if no clips are in the ideal range.
+    Uses an expressiveness composite score (80%) plus duration proximity
+    (20%) to pick the best clip.  When a voice_profile is provided, the
+    character's pace is used for rate matching.
+
+    Falls back to the longest clip under 25 seconds if no clips are in
+    the ideal duration range.
 
     Args:
         speaker_id: LibriTTS-P speaker ID (e.g., '7335').
         libritts_root: Root directory of LibriTTS-R audio files.
+        voice_profile: Optional character voice profile for rate matching.
 
     Returns:
         Relative path from libritts_root to the selected WAV file,
@@ -52,6 +63,9 @@ def select_reference_clip(speaker_id: str, libritts_root: Path) -> str | None:
     if not speaker_dirs:
         logger.warning("Speaker %s not found in %s", speaker_id, libritts_root)
         return None
+
+    # Determine target syllable rate from voice profile
+    target_rate = get_target_rate(voice_profile) if voice_profile else None
 
     # Collect all WAV files with duration estimates
     candidates: list[tuple[Path, float, float]] = []  # (path, duration, score)
@@ -68,8 +82,19 @@ def select_reference_clip(speaker_id: str, libritts_root: Path) -> str | None:
             if duration < _MIN_DURATION_S or duration > _MAX_DURATION_S:
                 continue
 
-            # Score: prefer clips closest to target duration
-            score = 1.0 / (1.0 + abs(duration - _TARGET_DURATION_S))
+            # Expressiveness composite scoring
+            try:
+                metrics = analyze_clip(wav_file)
+                expr_score = score_clip(metrics, target_rate)
+            except Exception as exc:
+                logger.debug("Failed to analyze %s: %s", wav_file, exc)
+                expr_score = 0.0
+
+            # Duration proximity as tiebreaker
+            dur_penalty = 1.0 / (1.0 + abs(duration - _TARGET_DURATION_S))
+
+            # Final score: expressiveness dominant, duration secondary
+            score = 0.8 * expr_score + 0.2 * dur_penalty
             candidates.append((wav_file, duration, score))
 
     if not candidates:
@@ -107,22 +132,41 @@ def select_reference_clip(speaker_id: str, libritts_root: Path) -> str | None:
 
     # Pick the highest-scoring candidate
     candidates.sort(key=lambda c: c[2], reverse=True)
-    best_path, best_duration, _ = candidates[0]
+    best_path, best_duration, best_score = candidates[0]
 
     rel_path = best_path.relative_to(libritts_root)
-    logger.info(
-        "Selected clip for speaker %s: %s (%.1fs, target %.1fs)",
-        speaker_id,
-        rel_path,
-        best_duration,
-        _TARGET_DURATION_S,
-    )
+
+    # Log expressiveness breakdown for top candidate
+    try:
+        top_metrics = analyze_clip(best_path)
+        logger.info(
+            "Selected clip for speaker %s: %s (%.1fs, score=%.3f, "
+            "snr=%.1fdB, pitch_var=%.0f, energy_var=%.6f, rate=%.1f syl/s)",
+            speaker_id,
+            rel_path,
+            best_duration,
+            best_score,
+            top_metrics["snr_db"],
+            top_metrics["pitch_variance"],
+            top_metrics["energy_variance"],
+            top_metrics["syllable_rate"],
+        )
+    except Exception:
+        logger.info(
+            "Selected clip for speaker %s: %s (%.1fs, score=%.3f)",
+            speaker_id,
+            rel_path,
+            best_duration,
+            best_score,
+        )
+
     return str(rel_path)
 
 
 def select_reference_clip_with_transcript(
     speaker_id: str,
     libritts_root: Path,
+    voice_profile: VoiceProfile | None = None,
 ) -> tuple[str | None, str | None]:
     """Select a reference clip and its normalized transcript.
 
@@ -134,13 +178,14 @@ def select_reference_clip_with_transcript(
     Args:
         speaker_id: LibriTTS-P speaker ID.
         libritts_root: Root directory of LibriTTS-R audio files.
+        voice_profile: Optional character voice profile for rate matching.
 
     Returns:
         Tuple of ``(clip_relative_path, transcript_text)`` or
         ``(clip_relative_path, None)`` if transcript not found.
         Returns ``(None, None)`` if speaker not found.
     """
-    clip_rel = select_reference_clip(speaker_id, libritts_root)
+    clip_rel = select_reference_clip(speaker_id, libritts_root, voice_profile)
     if clip_rel is None:
         return None, None
 

@@ -245,9 +245,9 @@ def run_matching(
     # --- Step 9: Select reference clips ---
     if libritts_audio_dir is not None:
         rprint("[bold cyan]Selecting reference clips...[/bold cyan]")
-        # Narrator clip
+        # Narrator clip (no voice_profile -- narrator has no character profile)
         narrator_clip = select_reference_clip(
-            narrator_assignment.speaker_id, libritts_audio_dir
+            narrator_assignment.speaker_id, libritts_audio_dir, voice_profile=None
         )
         if narrator_clip:
             narrator_assignment = narrator_assignment.model_copy(
@@ -264,9 +264,13 @@ def run_matching(
                 }
             )
 
-        # Character clips
+        # Build name->voice_profile lookup from characters list (loaded in step 2)
+        char_profile_map = {c.name: c.voice_profile for c in characters}
+
+        # Character clips (pass voice_profile for rate matching)
         for i, a in enumerate(all_assignments):
-            clip = select_reference_clip(a.speaker_id, libritts_audio_dir)
+            char_vp = char_profile_map.get(a.character_name)
+            clip = select_reference_clip(a.speaker_id, libritts_audio_dir, voice_profile=char_vp)
             if clip:
                 all_assignments[i] = a.model_copy(update={"clip_path": clip})
             else:
