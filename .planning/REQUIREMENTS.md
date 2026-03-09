@@ -20,9 +20,9 @@ Requirements for Voice Quality milestone. Each maps to roadmap phases.
 
 ### Opinionated Voice Profiles
 
-- [ ] **PROF-01**: --opinionated flag modifies extraction prompt to push for extreme distinctive descriptions, never use "moderate"/"medium"
-- [ ] **PROF-02**: Post-extraction distinctiveness pass — review all voice profiles together and push similar-sounding characters apart
-- [ ] **PROF-03**: voice_overrides.yaml — user can manually set voice profile fields per character, applied last in pipeline
+- [x] **PROF-01**: --opinionated flag modifies extraction prompt to push for extreme distinctive descriptions, never use "moderate"/"medium"
+- [x] **PROF-02**: Post-extraction distinctiveness pass — review all voice profiles together and push similar-sounding characters apart
+- [x] **PROF-03**: voice_overrides.yaml — user can manually set voice profile fields per character, applied last in pipeline
 
 ### Expressive Reference Clips
 
@@ -58,9 +58,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | MERGE-06 | Phase 14 | Complete |
 | MERGE-07 | Phase 14 | Complete |
 | MERGE-08 | Phase 14 | Complete |
-| PROF-01 | Phase 15 | Pending |
-| PROF-02 | Phase 15 | Pending |
-| PROF-03 | Phase 15 | Pending |
+| PROF-01 | Phase 15 | Complete |
+| PROF-02 | Phase 15 | Complete |
+| PROF-03 | Phase 15 | Complete |
 | CLIP-01 | Phase 15 | Complete |
 | CLIP-02 | Phase 15 | Complete |
 

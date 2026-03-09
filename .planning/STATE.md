@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Voice Quality
-status: in-progress
-stopped_at: Completed 15-02-PLAN.md
-last_updated: "2026-03-09T22:06:53.805Z"
-last_activity: 2026-03-09 -- Completed 15-02 expressiveness clip selection
+status: completed
+stopped_at: Completed 15-01-PLAN.md
+last_updated: "2026-03-09T22:08:10Z"
+last_activity: 2026-03-09 -- Completed 15-01 opinionated profiles
 progress:
   total_phases: 2
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 4
-  completed_plans: 3
+  completed_plans: 4
   percent: 100
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-09)
 ## Current Position
 
 Phase: 15 of 15 (Opinionated Profiles and Expressive Clips)
-Plan: 2 of 2 in current phase
-Status: In Progress
-Last activity: 2026-03-09 -- Completed 15-02 expressiveness clip selection
+Plan: 2 of 2 in current phase (COMPLETE)
+Status: Phase Complete
+Last activity: 2026-03-09 -- Completed 15-01 opinionated profiles
 
-Progress: [████████░░] 75% (3/4 v1.3 plans)
+Progress: [██████████] 100% (4/4 v1.3 plans)
 
 ## Performance Metrics
 
@@ -48,6 +48,7 @@ Progress: [████████░░] 75% (3/4 v1.3 plans)
 | 13 | 02 | 5min | 2 | 7 |
 | 14 | 01 | 3min | 2 | 3 |
 | 14 | 02 | 5min | 2 | 3 |
+| 15 | 01 | 6min | 2 | 9 |
 | 15 | 02 | 4min | 2 | 5 |
 
 ## Accumulated Context
@@ -66,6 +67,9 @@ Recent decisions affecting current work:
 - [v1.3]: Hardcoded expressiveness weights 0.4/0.3/0.2/0.1 -- not configurable per RESEARCH.md
 - [v1.3]: 80% expressiveness + 20% duration proximity for final clip score
 - [v1.3]: pace_style takes precedence over pace in rate mapping
+- [v1.3]: Opinionated mode appends addendum to base prompt (not separate variant)
+- [v1.3]: Distinctiveness uses compact name+voice_profile for Qwen 3.5 9B context fit
+- [v1.3]: Voice overrides merge fields (partial update), applied last in pipeline
 
 ### Pending Todos
 
@@ -79,6 +83,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-09T22:06:11Z
-Stopped at: Completed 15-02-PLAN.md
-Resume file: .planning/phases/15-opinionated-profiles-and-expressive-clips/15-02-SUMMARY.md
+Last session: 2026-03-09T22:08:10Z
+Stopped at: Completed 15-01-PLAN.md
+Resume file: .planning/phases/15-opinionated-profiles-and-expressive-clips/15-01-SUMMARY.md
