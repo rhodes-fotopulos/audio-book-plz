@@ -250,3 +250,66 @@ class SpeechActResult(BaseModel):
     """
 
     tags: list[SpeechActTag]
+
+
+# ---------------------------------------------------------------------------
+# Merge audit models (Phase 14 — merger hardening)
+# ---------------------------------------------------------------------------
+
+
+class MergeDecision(BaseModel):
+    """Record of a single merge/reject/flag decision during character merging.
+
+    Each stage of the merge pipeline (exact-name, fuzzy, alias, LLM)
+    records its decisions for audit trail and debugging.
+    """
+
+    stage: str
+    """Which merge stage produced this decision (e.g. 'exact_name', 'fuzzy', 'llm')."""
+
+    profile_a: str
+    """Canonical name of the first profile."""
+
+    profile_b: str
+    """Canonical name of the second profile."""
+
+    action: str
+    """Decision taken: 'merged', 'rejected', or 'flagged'."""
+
+    reason: str
+    """Human-readable explanation of why this action was taken."""
+
+    confidence: float
+    """Confidence score 0.0-1.0 for this decision."""
+
+    details: dict = {}
+    """Optional extra data (e.g. similarity score, co-occurrence chapters)."""
+
+
+class MergeAudit(BaseModel):
+    """Complete audit trail for a merge_characters run.
+
+    Written to merge_audit.json alongside characters.json so that
+    merge decisions can be reviewed and debugged.
+    """
+
+    book_title: str
+    """Title of the book being processed."""
+
+    timestamp: str
+    """ISO-8601 timestamp of when the merge was performed."""
+
+    total_raw_profiles: int
+    """Number of raw character entries before merging."""
+
+    total_merged_profiles: int
+    """Number of profiles after merging."""
+
+    stages: dict[str, list[MergeDecision]] = {}
+    """Decisions grouped by stage name."""
+
+    warnings: list[str] = []
+    """Post-merge validation warnings (e.g. excessive aliases, trait overflow)."""
+
+    final_profiles: list[str] = []
+    """Canonical names of all profiles in the final registry."""
