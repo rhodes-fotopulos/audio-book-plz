@@ -72,11 +72,11 @@ Plans:
   2. When two characters have similar extracted profiles, the post-extraction distinctiveness pass modifies at least one to create audible separation (verifiable by diffing characters.json before/after)
   3. A voice_overrides.yaml file in the book directory is loaded and applied as the final step, overriding any automated profile fields for specified characters
   4. Reference clip selection scores clips using a composite of SNR, pitch variance, energy variance, and rate match -- not just duration -- and a fast-paced character gets a faster-talking speaker's clip
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 15-01: TBD
-- [ ] 15-02: TBD
+- [ ] 15-01-PLAN.md -- Opinionated extraction, LLM distinctiveness pass, and voice overrides
+- [ ] 15-02-PLAN.md -- Expressiveness-aware clip selection with rate matching
 
 ## Progress
 
@@ -98,9 +98,9 @@ Phases execute in numeric order: 14 -> 15
 | 11. Data Model Unification and Voice Matching | v1.2 | 2/2 | Complete | 2026-03-07 |
 | 12. Emotion Removal and LLM Optimization | v1.2 | 2/2 | Complete | 2026-03-07 |
 | 13. Synthesis Performance | v1.2 | 2/2 | Complete | 2026-03-07 |
-| 14. Character Profile Merger Hardening | 2/2 | Complete    | 2026-03-09 | - |
-| 15. Opinionated Profiles and Expressive Clips | v1.3 | 0/? | Not started | - |
+| 14. Character Profile Merger Hardening | v1.3 | 2/2 | Complete | 2026-03-09 |
+| 15. Opinionated Profiles and Expressive Clips | v1.3 | 0/2 | Not started | - |
 
 ---
 *Roadmap created: 2026-03-03*
-*Last updated: 2026-03-09 -- Phase 14 plans created*
+*Last updated: 2026-03-09 -- Phase 15 plans created*
