@@ -103,6 +103,11 @@ def convert(
         "--batch-by-character",
         help="Synthesize per-character (all segments for each voice consecutively) instead of chapter-by-chapter",
     ),
+    opinionated: bool = typer.Option(
+        False,
+        "--opinionated",
+        help="Push voice profiles to distinctive extremes -- never 'moderate'/'medium'",
+    ),
     clean_voices: bool = typer.Option(
         False,
         "--clean-voices",
@@ -142,6 +147,7 @@ def convert(
         voice_threshold=voice_threshold, mp3_output_dir=mp3_dir,
         speech_act_fx=speech_act_fx,
         batch_by_character=batch_by_character,
+        opinionated=opinionated,
     )
 
     if clean_voices:
@@ -162,6 +168,11 @@ def attribute(
         help="Override LLM model (e.g., qwen3.5:9b, claude-code). "
         "Use 'claude-code' to run through Claude Code CLI (requires Max plan).",
     ),
+    opinionated: bool = typer.Option(
+        False,
+        "--opinionated",
+        help="Push voice profiles to distinctive extremes -- never 'moderate'/'medium'",
+    ),
 ) -> None:
     """Attribute dialogue speakers using local LLM."""
     segments_file = book_dir / "segments.json"
@@ -172,7 +183,7 @@ def attribute(
         )
         raise typer.Exit(code=1)
 
-    run_attribute(book_dir, model_override=model)
+    run_attribute(book_dir, model_override=model, opinionated=opinionated)
 
 
 @app.command()

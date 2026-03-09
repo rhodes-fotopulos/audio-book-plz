@@ -128,6 +128,7 @@ def run_parse(epub_path: Path, output_dir: Path) -> Path:
 def run_attribute(
     book_dir: Path,
     model_override: str | None = None,
+    opinionated: bool = False,
 ) -> tuple[Path, Path]:
     """End-to-end attribution phase: segments.json -> characters.json + attributed.json.
 
@@ -176,6 +177,7 @@ def run_attribute(
 
         chapter_characters = extract_all_characters(
             segments, cache_dir, progress_callback=_extraction_progress,
+            opinionated=opinionated,
         )
 
     # --- Merge pass ---
@@ -183,6 +185,27 @@ def run_attribute(
     characters, merge_audit = merge_characters(
         chapter_characters, cache_dir, book_title=book_dir.name
     )
+
+    # --- Distinctiveness pass ---
+    rprint("[bold cyan]Running distinctiveness pass...[/bold cyan]")
+    from src.attribution.distinctiveness import run_distinctiveness_pass
+
+    characters = run_distinctiveness_pass(characters, cache_dir)
+    dist_count = 0  # modifications counted from logs
+    rprint(f"[dim]Distinctiveness pass complete[/dim]")
+
+    # --- Voice overrides ---
+    from src.voice_overrides import apply_voice_overrides, load_voice_overrides
+
+    overrides = load_voice_overrides(book_dir)
+    if overrides:
+        override_count = sum(
+            1
+            for char in characters
+            if char.name.lower() in {n.lower() for n in overrides.characters}
+        )
+        characters = apply_voice_overrides(characters, overrides)
+        rprint(f"[bold cyan]Voice overrides: applied for {override_count} character(s)[/bold cyan]")
 
     # --- Write characters.json ---
     characters_path = book_dir / "characters.json"
@@ -794,6 +817,7 @@ def run_full_pipeline(
     mp3_output_dir: Path | None = None,
     speech_act_fx: bool = False,
     batch_by_character: bool = False,
+    opinionated: bool = False,
 ) -> None:
     """Orchestrate all pipeline phases.
 
@@ -813,6 +837,7 @@ def run_full_pipeline(
         speech_act_fx: If True, enable speech-act audio post-processing.
         batch_by_character: If True, synthesize per-character instead of
             per-chapter to reduce MLX cache thrashing.
+        opinionated: If True, push voice profiles to distinctive extremes.
     """
     rprint("\n[bold green]Phase 1: Parse[/bold green]")
     run_parse(epub_path, output_dir)
@@ -822,7 +847,7 @@ def run_full_pipeline(
     output_book_dir = output_dir / book_slug
 
     rprint("\n[bold green]Phase 2: Attribute[/bold green]")
-    run_attribute(output_book_dir, model_override=model_override)
+    run_attribute(output_book_dir, model_override=model_override, opinionated=opinionated)
 
     rprint("\n[bold green]Phase 3: Match[/bold green]")
     run_match(
