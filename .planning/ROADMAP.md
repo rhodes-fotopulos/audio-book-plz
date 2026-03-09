@@ -57,11 +57,11 @@
   3. Post-merge validation flags any profile with aliases matching another character's canonical name, and the user sees a warning in the console output
   4. Characters who co-occur in dialogue within the same chapter are never merged, regardless of name similarity
   5. No profile exceeds 30 traits after merging -- overflow traits are discarded with a logged warning
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 14-01: TBD
-- [ ] 14-02: TBD
+- [ ] 14-01-PLAN.md -- Data models, test scaffold, and extraction prompt hardening
+- [ ] 14-02-PLAN.md -- Merger pipeline restructure with LLM arbiter and audit trail
 
 ### Phase 15: Opinionated Profiles and Expressive Clips
 **Goal**: Each character gets a polarized, distinctive voice profile and a reference clip selected for expressiveness and pace alignment
@@ -98,9 +98,9 @@ Phases execute in numeric order: 14 -> 15
 | 11. Data Model Unification and Voice Matching | v1.2 | 2/2 | Complete | 2026-03-07 |
 | 12. Emotion Removal and LLM Optimization | v1.2 | 2/2 | Complete | 2026-03-07 |
 | 13. Synthesis Performance | v1.2 | 2/2 | Complete | 2026-03-07 |
-| 14. Character Profile Merger Hardening | v1.3 | 0/? | Not started | - |
+| 14. Character Profile Merger Hardening | v1.3 | 0/2 | Planning | - |
 | 15. Opinionated Profiles and Expressive Clips | v1.3 | 0/? | Not started | - |
 
 ---
 *Roadmap created: 2026-03-03*
-*Last updated: 2026-03-09 -- v1.3 Voice Quality roadmap added*
+*Last updated: 2026-03-09 -- Phase 14 plans created*
