@@ -105,6 +105,33 @@ to character B, "B" is NOT an alias of A.
 characters. Only use proper names, titles, or unique descriptors \
 (e.g. "Mr. Darcy", "Miss Bingley", "the housekeeper")."""
 
+OPINIONATED_ADDENDUM = """\
+
+OPINIONATED MODE — Push for distinctiveness:
+- NEVER use these bland descriptors: "moderate", "medium", "average", "normal", "standard", "typical", "ordinary", "neutral" (for voice traits — "neutral" is OK for accent)
+- For pace: choose "fast", "slow", "rapid", "deliberate", "languid", "clipped" — NEVER "moderate"
+- For pitch: choose "high" or "low" — NEVER "medium" unless truly average
+- For energy: choose "restrained", "intense", "animated", "subdued" — NEVER "moderate"
+- Push every trait to its distinctive extreme based on textual evidence
+- When evidence is weak, make a bold literary inference rather than defaulting to bland middle-ground
+- "unknown" is acceptable ONLY for accent when no accent evidence exists
+- The description field should be vivid and specific, not generic"""
+
+
+def get_extraction_prompt(opinionated: bool = False) -> str:
+    """Return the extraction system prompt, optionally with opinionated addendum.
+
+    Args:
+        opinionated: If True, append OPINIONATED_ADDENDUM to push for
+            distinctive, extreme voice profile descriptors.
+
+    Returns:
+        The system prompt string.
+    """
+    if opinionated:
+        return EXTRACTION_SYSTEM_PROMPT + OPINIONATED_ADDENDUM
+    return EXTRACTION_SYSTEM_PROMPT
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -219,7 +246,11 @@ def _split_chapter_text(chapter_text: str, max_chars: int) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def _extract_chunk(chunk: str, label: str) -> list[CharacterProfile]:
+def _extract_chunk(
+    chunk: str,
+    label: str,
+    system_prompt: str = EXTRACTION_SYSTEM_PROMPT,
+) -> list[CharacterProfile]:
     """Extract characters from a text chunk, auto-splitting on truncation.
 
     If the LLM output is truncated (too many characters for the context
@@ -228,13 +259,14 @@ def _extract_chunk(chunk: str, label: str) -> list[CharacterProfile]:
     Args:
         chunk: Text to extract characters from.
         label: Human-readable label for logging (e.g., "Chapter 19").
+        system_prompt: System prompt to use for the LLM call.
 
     Returns:
         List of CharacterProfile objects found in this chunk.
     """
     try:
         result = call_llm_structured(
-            EXTRACTION_SYSTEM_PROMPT,
+            system_prompt,
             chunk,
             ChapterExtractionResult,
         )
@@ -251,7 +283,7 @@ def _extract_chunk(chunk: str, label: str) -> list[CharacterProfile]:
         characters: list[CharacterProfile] = []
         for j, sub in enumerate(sub_chunks):
             sub_label = f"{label} sub-{j + 1}/{len(sub_chunks)}"
-            characters.extend(_extract_chunk(sub, sub_label))
+            characters.extend(_extract_chunk(sub, sub_label, system_prompt=system_prompt))
         return characters
 
 
@@ -259,6 +291,7 @@ def extract_characters_from_chapter(
     chapter_text: str,
     chapter_num: int,
     cache_dir: Path,
+    opinionated: bool = False,
 ) -> list[CharacterProfile]:
     """Extract character profiles from a single chapter via LLM.
 
@@ -270,16 +303,22 @@ def extract_characters_from_chapter(
         chapter_text: Formatted chapter text from _build_chapter_text().
         chapter_num: 1-based chapter number (for logging).
         cache_dir: Directory for cache files.
+        opinionated: If True, use opinionated extraction prompt and
+            separate cache key.
 
     Returns:
         List of CharacterProfile objects found in this chapter.
     """
     # Check cache
-    cache_key = get_cache_key(chapter_text, "extraction_v3")
+    cache_prefix = "extraction_v3_opinionated" if opinionated else "extraction_v3"
+    cache_key = get_cache_key(chapter_text, cache_prefix)
     cached = check_cache(cache_dir, cache_key)
     if cached is not None:
         logger.info("Chapter %d: cache hit, skipping LLM call", chapter_num)
         return [CharacterProfile.model_validate(c) for c in cached]
+
+    # Build system prompt for this extraction mode
+    system_prompt = get_extraction_prompt(opinionated)
 
     # Split if needed
     chunks = _split_chapter_text(chapter_text, MAX_CONTENT_CHARS)
@@ -291,7 +330,7 @@ def extract_characters_from_chapter(
             else f"Chapter {chapter_num} chunk {i + 1}/{len(chunks)}"
         )
         logger.info("Extracting characters from %s (%d chars)", chunk_label, len(chunk))
-        all_characters.extend(_extract_chunk(chunk, chunk_label))
+        all_characters.extend(_extract_chunk(chunk, chunk_label, system_prompt=system_prompt))
 
     # Cache the result
     cache_data = [c.model_dump() for c in all_characters]
@@ -307,6 +346,7 @@ def extract_all_characters(
     segments: list[dict],
     cache_dir: Path,
     progress_callback: Callable[[int, int], None] | None = None,
+    opinionated: bool = False,
 ) -> dict[int, list[CharacterProfile]]:
     """Extract characters from all chapters in the book.
 
@@ -318,6 +358,7 @@ def extract_all_characters(
         cache_dir: Directory for cache files.
         progress_callback: Optional callback(chapter_num, total_chapters)
                           called after each chapter completes.
+        opinionated: If True, use opinionated extraction prompt variant.
 
     Returns:
         Dict mapping chapter_num -> list of CharacterProfile.
@@ -341,7 +382,7 @@ def extract_all_characters(
             chapter_num, len(chapters[chapter_num]), token_estimate,
         )
         characters = extract_characters_from_chapter(
-            chapter_text, chapter_num, cache_dir
+            chapter_text, chapter_num, cache_dir, opinionated=opinionated
         )
         return chapter_num, characters
 

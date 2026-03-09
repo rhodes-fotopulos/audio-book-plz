@@ -253,6 +253,25 @@ class SpeechActResult(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# LLM response schemas — distinctiveness pass
+# ---------------------------------------------------------------------------
+
+
+class DistinctivenessResult(BaseModel):
+    """LLM response schema for the distinctiveness pass.
+
+    The LLM reviews all character voice profiles together and returns
+    modified profiles with audible separation between similar characters.
+    """
+
+    characters: list[CharacterProfile]
+    """All character profiles (modified and unmodified)."""
+
+    modifications: list[str]
+    """Human-readable list of what was changed and why."""
+
+
+# ---------------------------------------------------------------------------
 # Merge audit models (Phase 14 — merger hardening)
 # ---------------------------------------------------------------------------
 
