@@ -98,7 +98,7 @@ Phases execute in numeric order: 14 -> 15
 | 11. Data Model Unification and Voice Matching | v1.2 | 2/2 | Complete | 2026-03-07 |
 | 12. Emotion Removal and LLM Optimization | v1.2 | 2/2 | Complete | 2026-03-07 |
 | 13. Synthesis Performance | v1.2 | 2/2 | Complete | 2026-03-07 |
-| 14. Character Profile Merger Hardening | 2/2 | Complete   | 2026-03-09 | - |
+| 14. Character Profile Merger Hardening | 2/2 | Complete    | 2026-03-09 | - |
 | 15. Opinionated Profiles and Expressive Clips | v1.3 | 0/? | Not started | - |
 
 ---
