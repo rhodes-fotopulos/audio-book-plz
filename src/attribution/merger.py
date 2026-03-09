@@ -254,6 +254,7 @@ def _merge_two_profiles(
     secondary: CharacterProfile,
     all_canonical_names: set[str] | None = None,
     audit: MergeAudit | None = None,
+    merge_group_names: set[str] | None = None,
 ) -> CharacterProfile:
     """Merge two profiles determined to be the same character.
 
@@ -296,12 +297,18 @@ def _merge_two_profiles(
     all_aliases.discard("")
 
     # MERGE-04: Cross-name exclusion — block aliases that match another
-    # profile's canonical name (case-insensitive)
+    # profile's canonical name (case-insensitive), but allow names from
+    # profiles being merged together (LLM already approved the merge)
+    if merge_group_names is None:
+        merge_group_names = set()
     blocked_aliases: set[str] = set()
     for alias in all_aliases:
         alias_lower = alias.lower().strip()
         # Check against all canonical names EXCEPT this profile's own canonical
-        if alias_lower in all_canonical_names and alias_lower != canonical_name.lower().strip():
+        # and names in the current merge group (LLM-approved merges)
+        if (alias_lower in all_canonical_names
+                and alias_lower != canonical_name.lower().strip()
+                and alias_lower not in merge_group_names):
             blocked_aliases.add(alias)
             logger.warning(
                 "Cross-name exclusion: blocked alias '%s' on profile '%s' "
@@ -794,10 +801,14 @@ def _arbitrate_with_llm(
     result_profiles: list[CharacterProfile] = []
 
     for group_indices in groups.values():
+        # Build set of all canonical names in this merge group so
+        # cross-name exclusion doesn't block LLM-approved merges
+        group_names = {profiles[idx].name.lower().strip() for idx in group_indices}
         primary = profiles[group_indices[0]]
         for idx in group_indices[1:]:
             primary = _merge_two_profiles(
-                primary, profiles[idx], all_canonical, audit
+                primary, profiles[idx], all_canonical, audit,
+                merge_group_names=group_names,
             )
         result_profiles.append(primary)
         merged_indices.update(group_indices)
