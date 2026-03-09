@@ -3,11 +3,11 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Voice Quality
 status: active
-stopped_at: Defining requirements
+stopped_at: Roadmap created, ready to plan Phase 14
 last_updated: "2026-03-09"
-last_activity: 2026-03-09 -- Milestone v1.3 started
+last_activity: 2026-03-09 -- v1.3 roadmap created
 progress:
-  total_phases: 0
+  total_phases: 2
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -21,28 +21,22 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-09)
 
 **Core value:** Feed in an EPUB, get out a multi-voice audiobook where each character has a distinct, fitting voice cloned from a real human recording.
-**Current focus:** v1.3 Voice Quality — Fix merger pipeline + opinionated profiles
+**Current focus:** Phase 14 - Character Profile Merger Hardening
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-03-09 — Milestone v1.3 started
+Phase: 14 of 15 (Character Profile Merger Hardening)
+Plan: 0 of ? in current phase
+Status: Ready to plan
+Last activity: 2026-03-09 -- v1.3 roadmap created
+
+Progress: [..........] 0% (0/2 v1.3 phases)
 
 ## Performance Metrics
 
-**v1.0:**
-- Phases: 6, Plans: 17
-- Timeline: ~2 days
-
-**v1.1:**
-- Phases: 4, Plans: 12
-- Timeline: 1 day
-
-**v1.2:**
-- Phases: 3 (11-13), Plans: 6
-- Timeline: 1 day
+**v1.0:** 6 phases, 17 plans, ~2 days
+**v1.1:** 4 phases, 12 plans, 1 day
+**v1.2:** 3 phases, 6 plans, 1 day
 
 | Phase | Plan | Duration | Tasks | Files |
 |-------|------|----------|-------|-------|
@@ -58,6 +52,10 @@ Last activity: 2026-03-09 — Milestone v1.3 started
 ### Decisions
 
 All decisions documented in PROJECT.md Key Decisions table.
+Recent decisions affecting current work:
+
+- [v1.2]: Emotion system removed -- Qwen3-TTS Base cannot combine cloning + emotion
+- [v1.3]: Sequential ordering mandatory -- merger clean before profiles, profiles before clips
 
 ### Pending Todos
 
@@ -65,10 +63,12 @@ None.
 
 ### Blockers/Concerns
 
-None.
+- Pre-existing test failures in test_llm_client.py and test_segmenter.py (mock config issues)
+- Expressiveness scoring weights (CLIP-01) unvalidated -- needs tuning in Phase 15
+- Distinctiveness pass design (PROF-02) needs constraint spec during Phase 15 planning
 
 ## Session Continuity
 
 Last session: 2026-03-09
-Stopped at: Defining requirements for v1.3
+Stopped at: v1.3 roadmap created, ready to plan Phase 14
 Resume file: N/A

@@ -5,6 +5,7 @@
 - ✅ **v1.0 MVP** -- Phases 1-6 (shipped 2026-03-04) -- [archive](milestones/v1.0-ROADMAP.md)
 - ✅ **v1.1 Pipeline Quality Improvements** -- Phases 7-10 (shipped 2026-03-04) -- [archive](milestones/v1.1-ROADMAP.md)
 - ✅ **v1.2 Voice Expression** -- Phases 11-13 (shipped 2026-03-07) -- [archive](milestones/v1.2-ROADMAP.md)
+- 🚧 **v1.3 Voice Quality** -- Phases 14-15 (in progress)
 
 ## Phases
 
@@ -39,7 +40,48 @@
 
 </details>
 
+### v1.3 Voice Quality (In Progress)
+
+- [ ] **Phase 14: Character Profile Merger Hardening** - Eliminate false-positive merges with cross-name exclusion, co-occurrence guards, and full audit trail
+- [ ] **Phase 15: Opinionated Profiles and Expressive Clips** - Push characters apart with distinctive voice profiles and select reference clips by expressiveness
+
+## Phase Details
+
+### Phase 14: Character Profile Merger Hardening
+**Goal**: Characters are correctly deduplicated with no cross-contamination, and every merge decision is auditable
+**Depends on**: Phase 13 (v1.2 complete)
+**Requirements**: MERGE-01, MERGE-02, MERGE-03, MERGE-04, MERGE-05, MERGE-06, MERGE-07, MERGE-08
+**Success Criteria** (what must be TRUE):
+  1. Running the pipeline on a multi-family novel (e.g., Pride and Prejudice) produces separate profiles for characters who share a surname -- no "Mrs. Bennet" absorbing "Elizabeth" or "Jane"
+  2. merge_audit.json is written alongside characters.json and contains per-stage accept/reject decisions with reasons for every merge candidate
+  3. Post-merge validation flags any profile with aliases matching another character's canonical name, and the user sees a warning in the console output
+  4. Characters who co-occur in dialogue within the same chapter are never merged, regardless of name similarity
+  5. No profile exceeds 30 traits after merging -- overflow traits are discarded with a logged warning
+**Plans**: TBD
+
+Plans:
+- [ ] 14-01: TBD
+- [ ] 14-02: TBD
+
+### Phase 15: Opinionated Profiles and Expressive Clips
+**Goal**: Each character gets a polarized, distinctive voice profile and a reference clip selected for expressiveness and pace alignment
+**Depends on**: Phase 14
+**Requirements**: PROF-01, PROF-02, PROF-03, CLIP-01, CLIP-02
+**Success Criteria** (what must be TRUE):
+  1. Running with --opinionated produces voice profiles that never use words like "moderate", "medium", or "average" -- every trait is pushed to a distinctive extreme
+  2. When two characters have similar extracted profiles, the post-extraction distinctiveness pass modifies at least one to create audible separation (verifiable by diffing characters.json before/after)
+  3. A voice_overrides.yaml file in the book directory is loaded and applied as the final step, overriding any automated profile fields for specified characters
+  4. Reference clip selection scores clips using a composite of SNR, pitch variance, energy variance, and rate match -- not just duration -- and a fast-paced character gets a faster-talking speaker's clip
+**Plans**: TBD
+
+Plans:
+- [ ] 15-01: TBD
+- [ ] 15-02: TBD
+
 ## Progress
+
+**Execution Order:**
+Phases execute in numeric order: 14 -> 15
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -56,7 +98,9 @@
 | 11. Data Model Unification and Voice Matching | v1.2 | 2/2 | Complete | 2026-03-07 |
 | 12. Emotion Removal and LLM Optimization | v1.2 | 2/2 | Complete | 2026-03-07 |
 | 13. Synthesis Performance | v1.2 | 2/2 | Complete | 2026-03-07 |
+| 14. Character Profile Merger Hardening | v1.3 | 0/? | Not started | - |
+| 15. Opinionated Profiles and Expressive Clips | v1.3 | 0/? | Not started | - |
 
 ---
 *Roadmap created: 2026-03-03*
-*Last updated: 2026-03-07 -- v1.2 Voice Expression shipped*
+*Last updated: 2026-03-09 -- v1.3 Voice Quality roadmap added*

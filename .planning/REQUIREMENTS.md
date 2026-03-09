@@ -50,25 +50,25 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| MERGE-01 | — | Pending |
-| MERGE-02 | — | Pending |
-| MERGE-03 | — | Pending |
-| MERGE-04 | — | Pending |
-| MERGE-05 | — | Pending |
-| MERGE-06 | — | Pending |
-| MERGE-07 | — | Pending |
-| MERGE-08 | — | Pending |
-| PROF-01 | — | Pending |
-| PROF-02 | — | Pending |
-| PROF-03 | — | Pending |
-| CLIP-01 | — | Pending |
-| CLIP-02 | — | Pending |
+| MERGE-01 | Phase 14 | Pending |
+| MERGE-02 | Phase 14 | Pending |
+| MERGE-03 | Phase 14 | Pending |
+| MERGE-04 | Phase 14 | Pending |
+| MERGE-05 | Phase 14 | Pending |
+| MERGE-06 | Phase 14 | Pending |
+| MERGE-07 | Phase 14 | Pending |
+| MERGE-08 | Phase 14 | Pending |
+| PROF-01 | Phase 15 | Pending |
+| PROF-02 | Phase 15 | Pending |
+| PROF-03 | Phase 15 | Pending |
+| CLIP-01 | Phase 15 | Pending |
+| CLIP-02 | Phase 15 | Pending |
 
 **Coverage:**
 - v1.3 requirements: 13 total
-- Mapped to phases: 0
-- Unmapped: 13 ⚠️
+- Mapped to phases: 13
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-09*
-*Last updated: 2026-03-09 after initial definition*
+*Last updated: 2026-03-09 after roadmap creation*
