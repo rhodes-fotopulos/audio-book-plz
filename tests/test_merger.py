@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -28,6 +29,9 @@ from src.attribution.models import (
 from src.attribution.merger import (
     _build_cooccurrence,
     _names_share_surname_only,
+    _merge_two_profiles,
+    _validate_merged_profiles,
+    _generate_candidate_pairs,
     merge_characters,
 )
 from src.attribution.extractor import EXTRACTION_SYSTEM_PROMPT
@@ -68,6 +72,16 @@ def _make_profile(
         personality_traits=traits or [],
         description=f"Test character: {name}",
         is_named=is_named,
+    )
+
+
+def _make_audit() -> MergeAudit:
+    """Create a blank MergeAudit for testing."""
+    return MergeAudit(
+        book_title="Test",
+        timestamp="2026-01-01T00:00:00Z",
+        total_raw_profiles=0,
+        total_merged_profiles=0,
     )
 
 
@@ -145,32 +159,32 @@ class TestAuditTrail:
         assert audit.warnings == []
         assert audit.final_profiles == []
 
-    def test_merge_characters_regression(self) -> None:
-        """merge_characters still works with its current signature (regression)."""
+    def test_merge_characters_returns_tuple(self) -> None:
+        """merge_characters returns (profiles, audit) tuple."""
         chapter_chars = {
             1: [_make_profile("Mr. Darcy"), _make_profile("Elizabeth")],
             2: [_make_profile("Darcy"), _make_profile("Elizabeth Bennet")],
         }
         result = merge_characters(chapter_chars)
-        # Should merge duplicates
-        names = [p.name for p in result]
-        assert len(result) <= 4  # At most 4, likely fewer after merging
+        assert isinstance(result, tuple)
+        profiles, audit = result
+        assert isinstance(profiles, list)
+        assert isinstance(audit, MergeAudit)
+        names = [p.name for p in profiles]
         assert any("darcy" in n.lower() for n in names)
 
-    @pytest.mark.skip(reason="Plan 02: merge_characters audit parameter not yet implemented")
-    def test_merge_characters_with_audit_collector(self) -> None:
-        """merge_characters records decisions when passed an audit collector."""
-        audit = MergeAudit(
-            book_title="Test",
-            timestamp="2026-01-01T00:00:00Z",
-            total_raw_profiles=0,
-            total_merged_profiles=0,
-        )
+    def test_merge_characters_records_exact_decisions(self) -> None:
+        """merge_characters records MergeDecision entries for exact-name merges."""
         chapter_chars = {
-            1: [_make_profile("Mr. Darcy"), _make_profile("Darcy")],
+            1: [_make_profile("Mr. Darcy")],
+            2: [_make_profile("Mr. Darcy")],
         }
-        merge_characters(chapter_chars, audit=audit)
-        assert len(audit.stages) > 0
+        profiles, audit = merge_characters(chapter_chars)
+        # Should have at least one exact-stage decision
+        assert "exact_name" in audit.stages
+        assert len(audit.stages["exact_name"]) > 0
+        assert audit.stages["exact_name"][0].action == "merged"
+        assert audit.stages["exact_name"][0].confidence == 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -198,15 +212,29 @@ class TestPostMergeValidation:
         )
         assert len(profile.personality_traits) > 50
 
-    @pytest.mark.skip(reason="Plan 02: _validate_merged_profiles not yet implemented")
     def test_alias_matches_canonical_name_warning(self) -> None:
         """Profile whose alias matches another profile's canonical name produces warning."""
-        pass
+        profiles = [
+            _make_profile("Elizabeth Bennet", aliases=["Mrs. Bennet"]),
+            _make_profile("Mrs. Bennet"),
+        ]
+        audit = _make_audit()
+        _validate_merged_profiles(profiles, audit)
+        # Should have a warning about alias-canonical cross-contamination
+        assert any("alias" in w.lower() and "canonical" in w.lower() for w in audit.warnings)
 
-    @pytest.mark.skip(reason="Plan 02: _validate_merged_profiles not yet implemented")
     def test_validate_generates_warnings_in_audit(self) -> None:
-        """_validate_merged_profiles populates audit.warnings."""
-        pass
+        """_validate_merged_profiles populates audit.warnings for excessive aliases."""
+        profiles = [
+            _make_profile(
+                "Elizabeth",
+                aliases=["Lizzy", "Eliza", "Miss Bennet", "Liz", "Beth", "Betsy"],
+            ),
+        ]
+        audit = _make_audit()
+        _validate_merged_profiles(profiles, audit)
+        assert len(audit.warnings) > 0
+        assert any("alias" in w.lower() for w in audit.warnings)
 
 
 # ---------------------------------------------------------------------------
@@ -297,15 +325,27 @@ class TestAuditOutput:
 class TestCrossNameExclusion:
     """Tests that aliases matching another profile's canonical name are blocked."""
 
-    @pytest.mark.skip(reason="Plan 02: cross-name exclusion logic not yet implemented")
     def test_alias_blocked_if_matches_canonical(self) -> None:
         """An alias that matches another profile's canonical name must be removed."""
-        pass
+        primary = _make_profile("Elizabeth Bennet", aliases=["Lizzy"])
+        secondary = _make_profile("Eliza", aliases=["Mrs. Bennet"])
+        all_canonical = {"mrs. bennet", "jane bennet"}
+        audit = _make_audit()
+        merged = _merge_two_profiles(primary, secondary, all_canonical, audit)
+        # "Mrs. Bennet" alias should be blocked (matches canonical of another profile)
+        alias_lower = {a.lower() for a in merged.aliases}
+        assert "mrs. bennet" not in alias_lower
 
-    @pytest.mark.skip(reason="Plan 02: cross-name exclusion logic not yet implemented")
     def test_alias_allowed_if_no_conflict(self) -> None:
         """Aliases that don't conflict with any canonical name are kept."""
-        pass
+        primary = _make_profile("Elizabeth Bennet")
+        secondary = _make_profile("Lizzy")
+        all_canonical = {"mr. darcy", "jane bennet"}
+        audit = _make_audit()
+        merged = _merge_two_profiles(primary, secondary, all_canonical, audit)
+        # "Lizzy" should be kept as alias
+        alias_lower = {a.lower() for a in merged.aliases}
+        assert "lizzy" in alias_lower
 
 
 # ---------------------------------------------------------------------------
@@ -337,10 +377,18 @@ class TestCooccurrenceSignal:
         assert "lizzy" in name_to_chapters
         assert 1 in name_to_chapters["lizzy"]
 
-    @pytest.mark.skip(reason="Plan 02: LLM arbiter with co-occurrence signal not yet implemented")
     def test_cooccurrence_not_binary_gate(self) -> None:
-        """Co-occurring profiles are NOT automatically blocked from merge."""
-        pass
+        """Co-occurring profiles are NOT automatically blocked from candidate generation."""
+        # Two profiles that co-occur but are fuzzy matches should still be candidates
+        chapter_chars = {
+            1: [_make_profile("Elizabeth"), _make_profile("Elisabeth")],
+        }
+        profiles = [_make_profile("Elizabeth"), _make_profile("Elisabeth")]
+        all_canonical = {p.name.lower() for p in profiles}
+        audit = _make_audit()
+        candidates = _generate_candidate_pairs(profiles, all_canonical, audit)
+        # Should generate a candidate pair (not blocked by co-occurrence)
+        assert len(candidates) > 0
 
 
 # ---------------------------------------------------------------------------
@@ -351,15 +399,30 @@ class TestCooccurrenceSignal:
 class TestTraitCap:
     """Tests that merged profiles have traits capped at 30."""
 
-    @pytest.mark.skip(reason="Plan 02: _merge_two_profiles trait cap not yet implemented")
     def test_traits_capped_at_30_after_merge(self) -> None:
         """Profile with >30 traits after merge should be capped."""
-        pass
+        primary = _make_profile("Alice", traits=[f"trait_a_{i}" for i in range(20)])
+        secondary = _make_profile("Alice B", traits=[f"trait_b_{i}" for i in range(20)])
+        audit = _make_audit()
+        merged = _merge_two_profiles(primary, secondary, set(), audit)
+        assert len(merged.personality_traits) <= 30
 
-    @pytest.mark.skip(reason="Plan 02: _merge_two_profiles trait cap not yet implemented")
     def test_traits_under_cap_unchanged(self) -> None:
         """Profile with <=30 traits after merge should keep all traits."""
-        pass
+        primary = _make_profile("Alice", traits=["kind", "brave"])
+        secondary = _make_profile("Alice B", traits=["smart", "loyal"])
+        audit = _make_audit()
+        merged = _merge_two_profiles(primary, secondary, set(), audit)
+        assert len(merged.personality_traits) == 4
+
+    def test_primary_traits_preserved_first(self) -> None:
+        """Primary profile's traits come first after cap."""
+        primary = _make_profile("Alice", traits=[f"primary_{i}" for i in range(20)])
+        secondary = _make_profile("Alice B", traits=[f"secondary_{i}" for i in range(20)])
+        audit = _make_audit()
+        merged = _merge_two_profiles(primary, secondary, set(), audit)
+        # First 20 should be primary's traits
+        assert all(t.startswith("primary_") for t in merged.personality_traits[:20])
 
 
 # ---------------------------------------------------------------------------
