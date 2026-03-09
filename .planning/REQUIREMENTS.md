@@ -26,8 +26,8 @@ Requirements for Voice Quality milestone. Each maps to roadmap phases.
 
 ### Expressive Reference Clips
 
-- [ ] **CLIP-01**: Score clips by expressiveness composite (0.4*SNR + 0.3*pitch_var + 0.2*energy_var + 0.1*rate_match) not just duration
-- [ ] **CLIP-02**: Rate-match reference clips to character profile — fast-paced character gets a fast-talking speaker's clip
+- [x] **CLIP-01**: Score clips by expressiveness composite (0.4*SNR + 0.3*pitch_var + 0.2*energy_var + 0.1*rate_match) not just duration
+- [x] **CLIP-02**: Rate-match reference clips to character profile — fast-paced character gets a fast-talking speaker's clip
 
 ## Future Requirements
 
@@ -61,8 +61,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PROF-01 | Phase 15 | Pending |
 | PROF-02 | Phase 15 | Pending |
 | PROF-03 | Phase 15 | Pending |
-| CLIP-01 | Phase 15 | Pending |
-| CLIP-02 | Phase 15 | Pending |
+| CLIP-01 | Phase 15 | Complete |
+| CLIP-02 | Phase 15 | Complete |
 
 **Coverage:**
 - v1.3 requirements: 13 total

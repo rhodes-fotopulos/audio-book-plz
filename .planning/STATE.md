@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Voice Quality
-status: completed
-stopped_at: Phase 15 context gathered
-last_updated: "2026-03-09T21:50:16.010Z"
-last_activity: 2026-03-09 -- Completed 14-02 merge pipeline restructure
+status: in-progress
+stopped_at: Completed 15-02-PLAN.md
+last_updated: "2026-03-09T22:06:53.805Z"
+last_activity: 2026-03-09 -- Completed 15-02 expressiveness clip selection
 progress:
   total_phases: 2
   completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
+  total_plans: 4
+  completed_plans: 3
   percent: 100
 ---
 
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-09)
 
 **Core value:** Feed in an EPUB, get out a multi-voice audiobook where each character has a distinct, fitting voice cloned from a real human recording.
-**Current focus:** Phase 14 - Character Profile Merger Hardening
+**Current focus:** Phase 15 - Opinionated Profiles and Expressive Clips
 
 ## Current Position
 
-Phase: 14 of 15 (Character Profile Merger Hardening)
-Plan: 2 of 2 in current phase (COMPLETE)
-Status: Phase Complete
-Last activity: 2026-03-09 -- Completed 14-02 merge pipeline restructure
+Phase: 15 of 15 (Opinionated Profiles and Expressive Clips)
+Plan: 2 of 2 in current phase
+Status: In Progress
+Last activity: 2026-03-09 -- Completed 15-02 expressiveness clip selection
 
-Progress: [██████████] 100% (2/2 v1.3 plans)
+Progress: [████████░░] 75% (3/4 v1.3 plans)
 
 ## Performance Metrics
 
@@ -48,6 +48,7 @@ Progress: [██████████] 100% (2/2 v1.3 plans)
 | 13 | 02 | 5min | 2 | 7 |
 | 14 | 01 | 3min | 2 | 3 |
 | 14 | 02 | 5min | 2 | 3 |
+| 15 | 02 | 4min | 2 | 5 |
 
 ## Accumulated Context
 
@@ -62,6 +63,9 @@ Recent decisions affecting current work:
 - [v1.3]: LLM confidence threshold 0.7 for merge arbiter (below = skip merge)
 - [v1.3]: Co-occurrence passed as signal to LLM, not binary gate
 - [v1.3]: Union-find for transitive merge group resolution
+- [v1.3]: Hardcoded expressiveness weights 0.4/0.3/0.2/0.1 -- not configurable per RESEARCH.md
+- [v1.3]: 80% expressiveness + 20% duration proximity for final clip score
+- [v1.3]: pace_style takes precedence over pace in rate mapping
 
 ### Pending Todos
 
@@ -75,6 +79,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-09T21:50:16.002Z
-Stopped at: Phase 15 context gathered
-Resume file: .planning/phases/15-opinionated-profiles-and-expressive-clips/15-CONTEXT.md
+Last session: 2026-03-09T22:06:11Z
+Stopped at: Completed 15-02-PLAN.md
+Resume file: .planning/phases/15-opinionated-profiles-and-expressive-clips/15-02-SUMMARY.md
