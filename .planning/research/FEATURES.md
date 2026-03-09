@@ -1,286 +1,137 @@
-# Feature Landscape: v1.2 Voice Expression
+# Feature Landscape
 
-**Domain:** Expressive TTS conditioning for AI audiobook pipeline
-**Researched:** 2026-03-06
-**Confidence:** MEDIUM (Qwen3-TTS Base model limitations confirmed via official sources; VoiceDesign workaround is verified but untested in this codebase; emotion-to-prosody effectiveness is empirically dependent)
-
----
-
-## Critical Context: What Already Exists
-
-Before mapping features, the existing system must be understood. v1.1 shipped these components that v1.2 builds on:
-
-| Component | Status | Where | What It Produces |
-|-----------|--------|-------|------------------|
-| `VoiceBaseline` | Extracted, never consumed by TTS | `attribution/models.py` | pace, tone, energy, typical_emotion, description per character |
-| `VoiceQualities` | Used by voice matching only | `attribution/models.py` | pitch, pace, tone, accent per character |
-| `SceneMood` | Extracted, never consumed by TTS | `attribution/emotion/models.py` | mood (8 categories), intensity, description per scene |
-| `LineOverride` | Extracted, never consumed by TTS | `attribution/emotion/models.py` | emotion, intensity, reason per high-contrast line |
-| Speech-act tags | Consumed by post-processor | `synthesis/post_processor.py` | volume/speed adjustments for whispered/shouted/thought |
-| `QwenTTSEngine.generate()` | Only uses text + ref_audio + ref_text | `synthesis/qwen_engine.py` | Raw audio with no style conditioning |
-
-**The gap:** Rich emotion and voice data is extracted by the LLM but never reaches the TTS engine. The pipeline generates the same prosody whether a character is "whispering in terror" or "shouting with joy" -- only post-processing volume/speed adjustments differentiate speech acts.
-
----
-
-## Critical Technical Constraint: Base Model Has No Instruct Parameter
-
-**Confidence: HIGH** (confirmed via HuggingFace model card, official GitHub, mlx-audio docs)
-
-The project uses `Qwen3-TTS-12Hz-1.7B-Base` via mlx-audio. This model variant does **not** accept an `instruct` parameter. The `generate()` / `generate_voice_clone()` API accepts only:
-
-- `text` -- the content to speak
-- `ref_audio` -- reference voice clip
-- `ref_text` -- transcript of reference clip
-- Standard generation kwargs (`max_new_tokens`, `top_p`, etc.)
-
-Style/emotion instructions (`instruct` parameter) only work with:
-- **CustomVoice** model -- 9 preset speakers, no voice cloning
-- **VoiceDesign** model -- generates new voices from descriptions, no cloning
-
-**You cannot combine voice cloning with explicit emotion instructions in a single model call.** This is the fundamental constraint shaping all v1.2 features.
-
----
+**Domain:** Audiobook voice quality -- merger hardening, opinionated voice profiles, expressive clip selection
+**Researched:** 2026-03-09
 
 ## Table Stakes
 
-Features users expect from an expressive audiobook. Missing these means the "voice expression" milestone delivers no perceptible improvement.
+Features users expect. Missing = the v1.3 milestone delivers no perceptible improvement.
 
-| Feature | Why Expected | Complexity | Dependencies | Notes |
-|---------|--------------|------------|--------------|-------|
-| Unified voice_profile field | Two overlapping voice models (VoiceQualities + VoiceBaseline) creates confusion and inconsistency in matching | LOW | None -- pure data model refactor | Merge into single `VoiceProfile` with all fields. voice_qualities.tone and voice_baseline.tone currently duplicate. |
-| Voice profile consumed by voice matching | Currently VoiceQualities drives matching; VoiceBaseline is ignored | LOW | Unified voice_profile | trait_matcher and embedding_matcher should use the richer unified profile for better speaker selection |
-| Scene mood influences synthesis | Emotion data is extracted but thrown away -- the emotion system is inert | MEDIUM | Requires a conditioning pathway to TTS | The hardest table-stakes item because Base model has no instruct param |
-| Line-level emotion overrides influence synthesis | High-contrast moments (laughing at a funeral) should sound different | MEDIUM | Scene mood pathway must exist first | Overrides are sparse (few per chapter) so the mechanism can be simpler |
-
----
+| Feature | Why Expected | Complexity | Depends On | Notes |
+|---------|--------------|------------|------------|-------|
+| Cross-name exclusion in alias/substring merge | Without this, `_names_match_substring` merges any name containing another as a substring regardless of whether the shorter name is a *different* character's canonical name. "Elizabeth" substring-matches into "Elizabeth Bennet" correctly, but also lets "Bennet" absorb into "Mr. Bennet" when "Mrs. Bennet" exists. | Low | Existing merger stages 1-3 | Build a set of all canonical names + aliases across all profiles. Before any substring/alias merge, check if the candidate's name appears in this cross-name set for a *different* profile. If so, block the merge. Simple set lookup against the full registry. |
+| Co-occurrence guard on ALL merge stages | Currently only applied in stage 4 (LLM consolidation). Stages 1-3 (exact, fuzzy, substring/alias) merge blindly. Two characters who share a name variant but appear as separate speakers in the same chapter get incorrectly merged. | Med | `_build_cooccurrence` exists, needs threading through stages 1-3 | The current `merge_characters` function flattens `chapter_characters` into `all_profiles` immediately, losing chapter provenance. Must either (a) tag each profile with its source chapter(s) before flattening, or (b) pass `chapter_characters` to each stage function. Option (a) is cleaner -- add a `source_chapters: set[int]` transient field to CharacterProfile or use a wrapper. |
+| Surname-only exclusion hardening | `_names_share_surname_only` requires both names to have 2+ parts. "Darcy" (1 part) vs "Mr. Darcy" (2 parts) bypasses the guard, allowing substring merge. Same problem with "Bennet" vs "Mrs. Bennet". | Low | Existing `_names_share_surname_only`, `TITLES` set | Extend to handle 1-part vs multi-part: if one name is a single word matching the last word of a multi-part name, and the multi-part name's prefix is a known title, treat as surname-only match and block. The `TITLES` set already exists. |
+| Extraction prompt hardening with negative examples | Current `EXTRACTION_SYSTEM_PROMPT` has abstract rules against cross-contamination ("Never list another character's name as an alias") but no concrete negative examples. LLMs follow few-shot negative examples far more reliably than instruction text. | Low | `EXTRACTION_SYSTEM_PROMPT` in `extractor.py` | Add 2-3 negative examples: "WRONG: Character 'Jane Bennet' with aliases ['Elizabeth', 'Lizzy']. Elizabeth and Lizzy belong to Elizabeth Bennet, a DIFFERENT character. CORRECT: Character 'Jane Bennet' with aliases ['Jane', 'Miss Bennet']." Keep concise to avoid consuming context window budget. |
+| Trait count cap (30) with overflow handling | After merging 40+ chapters of per-chapter character extractions, `personality_traits` accumulates unbounded near-synonyms via `dict.fromkeys` dedup. A character appearing in 30 chapters may have 50+ traits. This bloats the LLM casting prompt and confuses the trait matcher. | Low | `_merge_two_profiles` in `merger.py` | After union, if count > 30, truncate to 30. Simple approach: keep the first 30 (preserves earliest/most repeated traits since `dict.fromkeys` preserves insertion order). Better approach: group near-synonyms and keep one per group, but this adds complexity for marginal value. Start with simple truncation. |
+| Merge diagnostics with `merge_audit.json` | When a merge goes wrong, there is no way to diagnose which stage caused it. Only `logger.debug` calls exist, and those disappear in normal log levels. | Low | All merger stages | Accumulate audit entries during merge: `{stage: "fuzzy", merged_from: "Miss Darcy", merged_into: "Georgiana Darcy", reason: "title_name_match", blocked: false}`. Write to `book_dir/merge_audit.json` after completion. Include blocked merges too (shows what the system considered and rejected). |
+| Post-merge validation flagging cross-contaminated profiles | No automated check that the final registry is sane. Cross-contaminated profiles (Mrs. Bennet with Mr. Bennet's traits, or Elizabeth with Jane's voice profile) silently propagate to voice matching and produce wrong voice assignments. | Med | Merge diagnostics (for context when flagging) | After merge completes, validate: (1) No profile's alias list contains another profile's canonical name. (2) Gender in voice_profile description does not contradict profile gender. (3) Description does not reference a different character by name. Emit warnings, do not auto-fix (user decides via voice overrides). |
+| Voice overrides via `voice_overrides.yaml` | Users cannot manually fix a bad voice match without deleting `voice_map.json` and hoping the LLM picks differently. For a pipeline that takes hours to run, this is unacceptable. | Low | `voice_map.json` schema, orchestrator | Load `voice_overrides.yaml` from `book_dir` at start of `run_matching`. Format: `{character_name: {speaker_id: "1234"}}` for direct speaker override, or `{character_name: {voice_profile: {pitch: "low", tone: "gruff"}}}` to override profile traits before matching. Direct speaker_id skips matching entirely for that character. |
 
 ## Differentiators
 
-Features that move beyond "functional" to "notably expressive." Not expected but valued by anyone doing A/B comparison.
+Features that set the product apart. Not expected, but produce noticeably better audiobooks.
 
-| Feature | Value Proposition | Complexity | Dependencies | Notes |
-|---------|-------------------|------------|--------------|-------|
-| VoiceDesign-then-Clone pipeline for per-character style | Generate a reference clip using VoiceDesign with character's voice_profile description, then clone from it -- bakes style into the voice itself | HIGH | VoiceDesign model via mlx-audio, voice_profile description field | The official recommended approach for combining style with cloning. Requires loading VoiceDesign model during voice prep (one-time per character). |
-| Three-layer TTS conditioning stack | voice_profile (constant per character) + scene mood (varies per scene) + line override (rare) cascading to influence synthesis | HIGH | All table-stakes items above | The architecture goal. How each layer actually reaches the TTS is the design challenge. |
-| Emotion-to-text-cue injection | Prepend contextual text cues based on scene mood/line override to leverage Qwen3-TTS's text-semantic understanding | MEDIUM | Scene mood data, synthesizer integration | e.g., prepending "[speaking softly, with sadness]" before the text. Qwen3-TTS infers prosody from text semantics. Effectiveness varies -- needs empirical testing. |
-| Speech-act-aware post-processing expansion | Extend current volume/speed adjustments to include emotion-mapped parameters (e.g., sad = slower pace, angry = faster pace + slight volume boost) | LOW | Emotion data flow to post-processor | Builds on existing `SPEECH_ACT_PARAMS` pattern. Low risk, additive. |
-| Cached voice_clone_prompt per character | Pre-compute `create_voice_clone_prompt()` once per character and reuse across all segments -- faster synthesis, more consistent voice | LOW | mlx-audio API support for `voice_clone_prompt` | Currently re-processes ref_audio for every segment. Caching eliminates redundant computation. |
-
----
+| Feature | Value Proposition | Complexity | Depends On | Notes |
+|---------|-------------------|------------|------------|-------|
+| Opinionated voice profile extraction (`--opinionated` flag) | Current extraction produces generic profiles: many characters get "medium pitch, moderate pace, warm tone" because the LLM defaults to safe middle values when text evidence is sparse. This makes voice matching nearly random for similar characters because the trait matcher cannot distinguish between identical profiles. Opinionated extraction forces distinctive, polarized traits. | Med | Existing extraction prompt, VoiceProfile model | Two complementary mechanisms: (1) Sharpen the extraction prompt to demand commitment ("Never use 'medium' or 'moderate' -- choose a direction"), (2) Post-extraction distinctiveness pass where the LLM sees ALL profiles and pushes similar ones apart. Mechanism 2 is more important because extraction sees only one chapter at a time and cannot compare across characters. |
+| Post-extraction distinctiveness pass | The core mechanism behind opinionated profiles. After all profiles are merged, compare voice profiles pairwise. When two same-gender characters have near-identical profiles, invoke the LLM to differentiate them. "Two young female characters both have 'warm tone, moderate pace' -- give one 'clipped, bright' and the other 'languid, honeyed'." | Med | Merged character registry, LLM client | Input: complete character list. Output: revised profiles with more distinctive trait combinations. Constraints: only modify voice_profile fields, never name/aliases/gender/age_range. Must run AFTER merge hardening but BEFORE voice matching. Gate behind `--opinionated` flag so users can opt out. |
+| Extraction-time voice profile sharpening | Complement to post-extraction pass. Modify the extraction prompt to demand specific, non-generic traits from the start. Add examples: "Instead of 'medium pitch, warm tone', write 'tenor pitch, honeyed tone with an edge of impatience'." | Low | Extraction prompt only | Less effective alone than the distinctiveness pass (extraction sees one chapter, not the full cast), but produces richer raw material for the distinctiveness pass to work with. Use both together. |
+| Expressive reference clip scoring (pitch/energy/rate variance) | Current `clip_selector.py` scores clips purely by closeness to 12.5s target duration. A monotone 12.5s clip is rated higher than an expressive 10s clip. Qwen3-TTS mirrors the reference clip's prosodic range during voice cloning -- a flat reference produces flat output, an expressive reference produces expressive output. | High | `clip_selector.py`, `librosa` for audio analysis | Per-clip feature extraction: (a) pitch variance via `librosa.pyin` (F0 contour variance), (b) RMS energy variance (dynamic range), (c) speaking rate estimate via voiced-frame ratio from VAD or syllable density. Combine into composite expressiveness score. Scoring weights: 40% expressiveness, 30% SNR, 30% duration fitness. HIGH complexity because this requires loading and analyzing WAV files for every candidate clip (dozens per speaker), which is I/O and compute intensive on the full LibriTTS-R dataset. |
+| Rate-match reference clips to character profile pace | Beyond generic expressiveness: if a character's profile says "slow, measured speech", prefer clips with lower speaking rate. If "rapid, energetic", prefer clips with higher rate. The cloned voice inherits the reference clip's speaking rate tendencies. | Med | Expressive clip scoring (needs rate measurement already computed), VoiceProfile.pace field | After computing per-clip speaking rate, segment the rate distribution into tertiles. Map profile pace: "slow" -> bottom tertile, "moderate" -> middle, "fast" -> top. Apply as a filter before expressiveness scoring. Falls back to expressiveness-only if pace is "unknown" or if the tertile has too few candidates. |
 
 ## Anti-Features
 
-Features to explicitly NOT build. Each has been considered and rejected for specific reasons.
+Features to explicitly NOT build.
 
-| Anti-Feature | Why Tempting | Why Avoid | What to Do Instead |
-|--------------|-------------|-----------|-------------------|
-| Per-segment instruct parameter with cloned voice | Seems like the obvious way to add emotion | Base model does not support instruct with cloning. Period. No workaround except switching models. | Use text-semantic inference + text cue injection + post-processing |
-| Switching to CustomVoice model | Has instruct support for emotion | Only 9 preset voices. Loses the core value prop of distinct per-character voices from 2,443 LibriTTS-P speakers. | Stay on Base model with voice cloning |
-| Loading VoiceDesign + Base simultaneously | Could design voices on-the-fly during synthesis | 16GB memory budget. Two 1.7B models cannot coexist with any headroom. | Load VoiceDesign during voice prep phase (before synthesis), unload, then load Base for synthesis |
-| Real-time emotion re-synthesis | Re-generate segment if emotion analysis changes | 3000+ segments per book. Emotion changes are rare. Full re-synthesis is wasteful. | Checkpoint-aware selective regeneration for changed segments only |
-| SSML/markup-based prosody control | Industry standard for commercial TTS | Qwen3-TTS does not support SSML. MLX inference path has no SSML parser. | Text-semantic inference is Qwen3-TTS's approach to prosody |
-| Per-word emphasis marking | "Emphasize THIS word in the sentence" | No mechanism in Qwen3-TTS Base to control word-level emphasis. Would require fine-tuning. | Rely on text-semantic understanding. Qwen3-TTS handles emphasis from context (italics, caps, exclamation) |
-| Emotion interpolation between scenes | Smooth transition from "joyful" to "tense" across scene boundary | Over-engineering. Scene breaks already have pauses. Listeners expect mood shifts at scene boundaries. | Sharp scene mood transitions are natural in audiobooks |
-
----
+| Anti-Feature | Why Avoid | What to Do Instead |
+|--------------|-----------|-------------------|
+| Automatic speaker reassignment based on voice similarity | Tempting to auto-swap speaker IDs when Resemblyzer detects a "better" match elsewhere in the dataset. Breaks user trust, makes results unpredictable between runs, and creates action-at-a-distance where changing one character's profile affects another's voice. | Provide voice overrides YAML for manual control. Flag weak matches with warnings but let the user decide. |
+| Full upfront audio feature extraction for all LibriTTS-R clips | Pre-computing pitch/energy/rate for all 2,443 speakers' clips would take hours and require significant disk for cached features. Most speakers are never considered for any given book. | Compute features lazily: only for the ~10-30 candidate speakers that survive gender/age filtering for each character. Cache per-speaker features in a `.cache/clip_features/` directory after first computation. |
+| LLM-based audio quality assessment | Sending audio descriptions or spectrogram summaries to the LLM for quality scoring. Adds an LLM call per clip (hundreds of calls), the LLM has no actual audio understanding, and results are non-deterministic. | Use signal-processing metrics (SNR via waveform analysis, pitch variance via librosa) which are objective, fast, and deterministic. |
+| Cross-book voice consistency | Maintaining the same voice assignments across different books. Adds persistent state, cross-book coupling, and rarely matches user expectations (same actor should sound different as different characters). | Each book is independent. If users want consistency, they copy voice_overrides.yaml between books. |
+| Real-time merge visualization (TUI/GUI) | Over-engineering for a batch CLI tool. The merge runs once per book and takes seconds. | Emit `merge_audit.json` for post-hoc analysis. Log merge decisions at INFO level for real-time monitoring. |
+| Automatic personality-to-acoustic-feature mapping | Building deterministic rules like "shy = quiet voice, assertive = loud voice". Personality is a narrative quality, not an acoustic one. A shy character might whisper OR might speak normally and show shyness through word choice. | Keep personality traits as context for the LLM casting director prompt (it handles nuance), but do not build acoustic parameter rules from personality. |
+| Merger auto-correction (split incorrectly merged profiles) | Detecting and automatically reversing bad merges in a post-merge pass. The signals for "this merge was wrong" are weak (shared traits could be correct or contaminated), and auto-splitting creates worse problems than manual re-extraction. | Flag suspicious profiles in post-merge validation. User can re-run extraction with cache cleared for specific chapters, or use voice overrides to correct downstream effects. |
 
 ## Feature Dependencies
 
 ```
-Unified voice_profile (data model refactor)
+Extraction prompt hardening (independent, do first -- improves raw data quality)
     |
-    +-- Voice matching uses unified profile
-    |       (trait_matcher, embedding_matcher consume new fields)
-    |
-    +-- VoiceDesign-then-Clone pipeline (OPTIONAL, HIGH value)
-    |       Uses voice_profile.description to generate styled reference clip
-    |       Requires: loading VoiceDesign model during voice prep phase
-    |       Produces: style-baked reference clips per character
-    |
-    +-- Cached voice_clone_prompt
-            Pre-compute once per character, reuse for all segments
-
-Scene mood data flow to synthesizer
-    |
-    +-- Emotion-to-text-cue injection
-    |       Prepend mood context to segment text before TTS
-    |
-    +-- Speech-act post-processing expansion
-            Extend volume/speed params with emotion-mapped values
-
-Line override data flow to synthesizer
-    |
-    +-- Overrides replace scene mood for specific segments
-    |       Higher priority than scene mood in the cascade
-    |
-    +-- Same text-cue injection mechanism as scene mood
+    v
+Cross-name exclusion -----> Co-occurrence guard on all stages -----> Surname-only hardening
+    |                              |
+    v                              v
+Trait count cap              Merge diagnostics (merge_audit.json)
+                                   |
+                                   v
+                             Post-merge validation
+                                   |
+                                   v
+              +--------------------+--------------------+
+              |                                         |
+              v                                         v
+    Opinionated voice profiles                Voice overrides (YAML)
+              |                                   (independent, can
+              +-- Extraction-time sharpening       slot in anywhere)
+              |   (complementary, do together)
+              v
+    Post-extraction distinctiveness pass
+              |
+              v
+    Expressive reference clip scoring
+              |
+              v
+    Rate-match clips to character pace
 ```
 
-### Critical Path
+**Key ordering rationale:**
 
-1. **voice_profile unification** -- Pure refactor, no TTS changes, unblocks everything
-2. **Scene mood data flow** -- Pipe emotion data from attribution output to synthesizer
-3. **Text-cue injection** -- The primary mechanism for emotion to reach TTS
-4. **Line overrides** -- Uses same mechanism as scene mood, just higher priority
-5. **Post-processing expansion** -- Additive, low risk
-6. **VoiceDesign pipeline** (optional) -- Highest impact but highest complexity
-7. **Cached voice_clone_prompt** -- Performance optimization, do last
+1. **Merger hardening before opinionated profiles.** No point making profiles more distinctive if they get cross-contaminated during merge. A sharpened "Mrs. Bennet: shrill, rapid, high-pitched" profile is worthless if it gets merged with "Mr. Bennet: dry, measured, low baritone" due to surname-only matching.
 
----
+2. **Extraction prompt hardening is independent and cheap.** Do it first because it improves raw extraction quality for all downstream features and costs only a prompt edit (no code changes beyond the prompt string).
 
-## Detailed Feature Analysis
+3. **Post-merge validation before distinctiveness pass.** The distinctiveness pass modifies profiles. We need validation to confirm profiles are clean *before* modification, and again *after* to confirm the pass did not introduce problems.
 
-### 1. Unified voice_profile
+4. **Expressive clip scoring depends on good profiles** for rate matching, but the base expressiveness scoring (pitch/energy variance + SNR + duration) works independently. Rate matching is an enhancement on top.
 
-**Complexity:** LOW
-**Risk:** LOW
-
-Merge `VoiceQualities` and `VoiceBaseline` into a single `VoiceProfile` model:
-
-```
-VoiceProfile:
-    pitch: str          (from VoiceQualities)
-    pace: str           (from VoiceQualities -- overlaps VoiceBaseline.pace)
-    tone: str           (from VoiceQualities -- overlaps VoiceBaseline.tone)
-    accent: str         (from VoiceQualities)
-    energy: str         (from VoiceBaseline)
-    typical_emotion: str (from VoiceBaseline)
-    description: str    (from VoiceBaseline -- key for VoiceDesign)
-```
-
-**Migration:** `CharacterProfile` gets `voice_profile: VoiceProfile` replacing both `voice_qualities` and `voice_baseline`. Backward compatibility via a migration function that reads old JSON and constructs the new model. LLM extraction prompt updated to produce unified schema.
-
-**Why table stakes:** The duplication is confusing (which `tone` do you use?), and the unified `description` field is needed downstream for both VoiceDesign and text-cue injection.
-
-### 2. Scene Mood + Line Override Conditioning via Text Cues
-
-**Complexity:** MEDIUM
-**Risk:** MEDIUM (effectiveness depends on how well Qwen3-TTS responds to prepended text cues)
-
-**Mechanism:** Qwen3-TTS's Base model infers prosody from text semantics. The text IS the prompt. So to influence style, modify the text that reaches the engine.
-
-**Approach -- text-cue injection:**
-
-For dialogue segments, prepend a brief natural-language cue derived from scene mood:
-- Input text: `"I can't believe you did that."`
-- Scene mood: anger, HIGH intensity
-- Injected text: `"Speaking with anger: I can't believe you did that."`
-
-For narration segments, the cue is more subtle:
-- Input text: `"The room fell silent."`
-- Scene mood: fear, MEDIUM intensity
-- Injected text: `"In a tense, fearful tone: The room fell silent."`
-
-**Line overrides supersede scene mood** -- if a segment has a LineOverride, use the override's emotion instead of the scene mood.
-
-**Key design decisions:**
-- Cue format matters. Short, natural-language cues work best. Avoid XML-like tags.
-- Cue should NOT appear in synthesized speech -- it primes the model's prosody but should not be verbalized. **This is the main risk.** If Qwen3-TTS speaks the cue text aloud, the feature is broken. Needs empirical testing with various cue formats.
-- Fallback: If cues are spoken aloud, try parenthetical format `(angrily)` or bracket format `[angry]` which some models treat as stage directions.
-- Nuclear fallback: If no cue format works silently, abandon text injection and rely solely on post-processing expansion (less expressive but reliable).
-
-**Emotion-to-cue mapping:**
-
-| EmotionCategory | Intensity LOW | Intensity MEDIUM | Intensity HIGH |
-|-----------------|---------------|------------------|----------------|
-| NEUTRAL | (no cue) | (no cue) | (no cue) |
-| JOY | "With a hint of warmth:" | "Happily:" | "With great joy and excitement:" |
-| SADNESS | "With a touch of melancholy:" | "Sadly:" | "With deep sorrow:" |
-| ANGER | "With slight irritation:" | "Angrily:" | "With intense fury:" |
-| FEAR | "With unease:" | "Fearfully:" | "In terror:" |
-| SURPRISE | "With mild surprise:" | "In surprise:" | "In complete shock:" |
-| DISGUST | "With distaste:" | "With disgust:" | "With revulsion:" |
-| TENDERNESS | "Gently:" | "Tenderly:" | "With deep tenderness:" |
-
-### 3. VoiceDesign-then-Clone Pipeline (Differentiator)
-
-**Complexity:** HIGH
-**Risk:** MEDIUM (proven workflow per official docs, but untested in this codebase)
-
-**Confidence: MEDIUM** -- The workflow is officially documented by Qwen and verified by community guides. Memory feasibility on 16GB M4 is HIGH confidence (1.7B model fits in ~4GB via MLX bf16).
-
-**Workflow:**
-1. During voice prep phase (before synthesis), load VoiceDesign model
-2. For each character, use `voice_profile.description` as the `instruct` parameter
-3. Generate a 10-15s reference clip with styled voice matching the character description
-4. Unload VoiceDesign model
-5. Load Base model for synthesis
-6. Clone from the VoiceDesign-generated reference clip (which now carries the character's style)
-
-**Trade-off:** This replaces LibriTTS-P reference clips with VoiceDesign-generated clips. The cloned voice will sound like the VoiceDesign output, not like a real human from LibriTTS-P. This may reduce voice naturalness (real human recordings are typically more natural than synthesized references). But it gains style consistency -- every character sounds like their description says they should.
-
-**Alternative hybrid approach:** Use LibriTTS-P clips for timbre (real human voice quality) and rely on text-cue injection for emotion. This preserves voice naturalness at the cost of less style control. **Recommend starting with text-cue injection (feature 2) and adding VoiceDesign pipeline only if text cues prove insufficient.**
-
-### 4. Speech-Act Post-Processing Expansion
-
-**Complexity:** LOW
-**Risk:** LOW
-
-Extend `SPEECH_ACT_PARAMS` to include emotion-mapped parameters. The existing pattern (volume_db + speed_factor per speech act) is proven. Add emotion-based adjustments that stack with speech-act adjustments:
-
-| EmotionCategory | volume_db | speed_factor | Notes |
-|-----------------|-----------|--------------|-------|
-| NEUTRAL | 0.0 | 1.0 | No change |
-| JOY | +1.0 | 1.03 | Slightly brighter, slightly faster |
-| SADNESS | -1.5 | 0.95 | Slightly quieter, slightly slower |
-| ANGER | +2.0 | 1.05 | Louder, faster |
-| FEAR | -1.0 | 1.02 | Slightly quieter, slightly faster (breathless) |
-| SURPRISE | +1.5 | 1.0 | Louder, same pace |
-| DISGUST | 0.0 | 0.97 | Same volume, slightly slower |
-| TENDERNESS | -2.0 | 0.95 | Quieter, slower |
-
-**Intensity scaling:** LOW = 50% of values, MEDIUM = 100%, HIGH = 150%. Clamp to safe ranges.
-
-**Stacking with speech acts:** Emotion adjustments apply first, speech-act adjustments apply second. A "shouted with anger" line gets anger boost (+2.0 dB, 1.05x speed) then shout boost (+4.5 dB, 1.08x speed) = +6.5 dB total, 1.13x speed. Clamp to prevent distortion.
-
-### 5. Cached voice_clone_prompt
-
-**Complexity:** LOW
-**Risk:** LOW
-
-Use mlx-audio's `create_voice_clone_prompt()` to pre-compute the voice embedding + prompt tokens once per character, then pass `voice_clone_prompt` to `generate_voice_clone()` for each segment. Currently the engine re-processes the reference audio for every single segment.
-
-**Expected improvement:**
-- Faster synthesis (skip ref audio processing per segment)
-- More consistent voice (same prompt tokens every time)
-- Lower memory churn (no repeated audio loading)
-
-Store cached prompts in memory during the synthesis run (not to disk -- they are model-version-specific).
-
----
+5. **Voice overrides are fully independent.** They apply at the voice matching stage and require no changes to merger or extraction. Can be implemented at any point, but most useful after the pipeline produces better profiles.
 
 ## MVP Recommendation
 
-Prioritize in this order:
+**Phase 1 -- Merger Hardening (all table stakes, do first):**
 
-1. **Unified voice_profile** -- Pure refactor, unblocks everything, zero risk to synthesis quality
-2. **Voice matching uses unified profile** -- Small change in trait_matcher and embedding_matcher
-3. **Scene mood data flow to synthesizer** -- Pipe the data, even if conditioning mechanism is a no-op initially
-4. **Text-cue injection for emotion** -- The primary mechanism. Must be empirically tested. Include a feature flag to disable if cues are spoken aloud.
-5. **Line override conditioning** -- Same mechanism as scene mood, higher priority in cascade
+Prioritize:
+1. Extraction prompt hardening with negative examples
+2. Cross-name exclusion in alias/substring merge
+3. Co-occurrence guard on all merge stages
+4. Surname-only exclusion hardening
+5. Trait count cap (30) with overflow handling
+6. Merge diagnostics (`merge_audit.json`)
+7. Post-merge validation
 
-**Defer:**
-- **VoiceDesign pipeline:** High complexity, unclear value vs text-cue injection. Evaluate after text cues are tested.
-- **Cached voice_clone_prompt:** Performance optimization. Do after functional features work.
-- **Post-processing expansion:** Additive and low risk. Can be done anytime.
+**Phase 2 -- Opinionated Voice Profiles (differentiator):**
 
----
+Prioritize:
+1. Extraction-time voice profile sharpening (prompt changes)
+2. Post-extraction distinctiveness pass (new LLM step)
+3. `--opinionated` flag gating the new behavior
+4. Voice overrides via `voice_overrides.yaml`
+
+**Phase 3 -- Expressive Clip Selection (differentiator):**
+
+Prioritize:
+1. Expressive reference clip scoring (pitch/energy/rate variance + SNR + duration composite score)
+2. Rate-match reference clips to character profile pace
+3. Lazy computation with per-speaker feature caching in `.cache/clip_features/`
+
+**Defer:** Cross-book consistency, full upfront feature extraction, LLM audio assessment, merge auto-correction.
+
+## Complexity Budget
+
+| Feature Group | Estimated Complexity | New Code | Existing Code Modified |
+|---------------|---------------------|----------|----------------------|
+| Merger hardening | Medium overall (each item is Low, but 7 items together) | ~250 LOC (audit system, validation checks, cross-name index) | `merger.py` (co-occurrence threading, guards in stages 1-3), `extractor.py` (prompt only) |
+| Opinionated profiles | Medium | ~200 LOC (distinctiveness pass LLM call, profile comparison, `--opinionated` flag) | `extractor.py` (prompt sharpening), `pipeline.py` (new step between merge and match) |
+| Expressive clips | High | ~300 LOC (audio feature extraction, composite scoring, caching) | `clip_selector.py` (new scoring replaces duration-only), possible new `audio_features.py` module |
+| Voice overrides | Low | ~80 LOC (YAML loader, override application) | `orchestrator.py` (load overrides at start of `run_matching`, apply before/after matching) |
 
 ## Sources
 
-- [Qwen3-TTS Official Repository](https://github.com/QwenLM/Qwen3-TTS) -- model variants, API, Base vs CustomVoice vs VoiceDesign (HIGH confidence)
-- [Qwen3-TTS-12Hz-1.7B-Base HuggingFace](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-Base) -- Base model API, no instruct support confirmed (HIGH confidence)
-- [Qwen3-TTS-12Hz-1.7B-CustomVoice HuggingFace](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice) -- CustomVoice API with instruct, 9 preset speakers only (HIGH confidence)
-- [mlx-audio Qwen3-TTS README](https://github.com/Blaizzy/mlx-audio/blob/main/mlx_audio/tts/models/qwen3_tts/README.md) -- MLX API for all model variants (HIGH confidence)
-- [mlx-community VoiceDesign bf16](https://huggingface.co/mlx-community/Qwen3-TTS-12Hz-1.7B-VoiceDesign-bf16) -- MLX-converted VoiceDesign model available (HIGH confidence)
-- [Qwen3-TTS Voice Cloning Guide 2026](https://ocdevel.com/blog/20260302-qwen-tts-voice-cloning) -- VoiceDesign-then-Clone workflow, accent instability warning (MEDIUM confidence)
-- [Qwen3-TTS Complete Guide (DEV Community)](https://dev.to/czmilo/qwen3-tts-the-complete-2026-guide-to-open-source-voice-cloning-and-ai-speech-generation-1in6) -- ecosystem overview, model comparison (MEDIUM confidence)
-- [Enhanced Prosody Modeling for Audiobook Synthesis (ACM 2025)](https://dl.acm.org/doi/10.1145/3749644) -- hierarchical prosody control patterns (MEDIUM confidence)
-- [Controlling Emotion in TTS with Natural Language Prompts (Interspeech 2024)](https://arxiv.org/html/2406.06406v1) -- text-based emotion conditioning approaches (MEDIUM confidence)
-- [Controllable Speech Synthesis Survey (2024)](https://arxiv.org/html/2412.06602v1) -- multi-scale prosody control taxonomy (MEDIUM confidence)
-- [Qwen Blog: Qwen3-TTS Family](https://qwen.ai/blog?id=qwen3tts-0115) -- official capabilities description, text-semantic understanding (HIGH confidence)
-
----
-*Feature research for: v1.2 voice expression milestone*
-*Researched: 2026-03-06*
+- Codebase analysis: `src/attribution/merger.py` (697 LOC, 4-stage merge pipeline), `src/attribution/extractor.py` (354 LOC, per-chapter LLM extraction), `src/matching/clip_selector.py` (172 LOC, duration-only scoring), `src/matching/trait_matcher.py` (407 LOC, LLM casting director), `src/matching/orchestrator.py` (311 LOC, end-to-end matching)
+- `src/attribution/models.py` (VoiceProfile with 9 fields, CharacterProfile schema)
+- `.planning/PROJECT.md` (v1.3 milestone definition, active requirements list)
+- LibriTTS-R dataset: 24kHz mono 16-bit WAV, normalized transcripts, ~2,443 speakers (HIGH confidence, confirmed by existing codebase usage)
+- Qwen3-TTS voice cloning behavior: reference clip prosodic range directly influences cloned output expressiveness (HIGH confidence, established through v1.1/v1.2 development)
+- librosa pitch tracking: `librosa.pyin` for fundamental frequency estimation is the standard approach for pitch variance measurement (HIGH confidence, well-established library)

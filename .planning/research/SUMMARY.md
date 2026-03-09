@@ -1,168 +1,159 @@
 # Project Research Summary
 
-**Project:** audio-book-plz v1.2 Voice Expression
-**Domain:** Expressive TTS conditioning for EPUB-to-audiobook pipeline
-**Researched:** 2026-03-06
-**Confidence:** MEDIUM
+**Project:** audio-book-plz v1.3 Voice Quality
+**Domain:** Audiobook generation pipeline -- character merger hardening, opinionated voice profiles, expressive reference clip selection
+**Researched:** 2026-03-09
+**Confidence:** HIGH
 
 ## Executive Summary
 
-The v1.2 milestone aims to make the audiobook pipeline emotionally expressive by wiring the rich emotion data already extracted in v1.1 (scene moods, line overrides, voice baselines) into the TTS synthesis phase. The central finding across all four research tracks is that **Qwen3-TTS Base model cannot combine voice cloning with style instructions** -- these are mutually exclusive capabilities split across different model variants. Since voice cloning from LibriTTS-R speakers is the project's core value proposition, style/emotion control must happen entirely through audio post-processing, not TTS model instructions. This is not a limitation to work around later; it is the defining architectural constraint for all v1.2 work.
+The v1.3 milestone addresses three interconnected quality problems in the existing EPUB-to-audiobook pipeline: (1) the character merger produces false-positive merges that contaminate voice profiles, (2) extracted voice profiles are too generic to differentiate similar characters during voice matching, and (3) reference clip selection ignores expressiveness, picking clips purely by duration. All three problems are rooted in well-understood code paths (merger.py, extractor.py, clip_selector.py) and the research identifies specific line-level fixes rather than architectural rewrites.
 
-The recommended approach is a three-layer post-processing expression system: character voice baseline (constant per character, derived from a unified VoiceProfile), scene mood (per scene, from existing emotion.json), and line-level overrides (sparse, for high-contrast moments). All three layers resolve to concrete audio parameters (volume, speed, pitch shift) applied after TTS generation using existing libraries (numpy, pedalboard). Zero new dependencies are needed. The data model must first be cleaned up by merging the duplicated VoiceQualities and VoiceBaseline into a single VoiceProfile, with backward-compatible migration for existing JSON artifacts.
+The recommended approach is strictly sequential: fix the merger first, then improve profile distinctiveness, then upgrade clip selection. This ordering is non-negotiable because each layer depends on clean output from the previous one. Opinionated voice profiles are worthless if they get cross-contaminated during merge, and expressive clip selection cannot rate-match to character pace if the pace field is "unknown" or belongs to the wrong character. The entire v1.3 stack requires zero new pip installs -- librosa and PyYAML are already in the venv as transitive dependencies and just need promotion to explicit deps in pyproject.toml.
 
-The primary risks are: (1) the data model merge breaking existing pipeline artifacts if not handled with backward compatibility, (2) speech-act and emotion post-processing conflicting when stacked without a clear priority model, and (3) emotion data never actually reaching the synthesis loop due to the disconnect between the attribution phase (which produces emotion.json) and the synthesis phase (which never loads it). All three are preventable with careful implementation ordering -- data model first, expression resolver second, synthesis wiring last.
+The primary risk is cascading merge contamination: one false-positive merge in Stage 2 (fuzzy) snowballs through Stages 3-4, producing mega-profiles that absorb entire casts. This is the root cause driving the milestone and must be fixed with cross-name exclusion, co-occurrence guards on all merge stages, and post-merge validation. Secondary risks include the distinctiveness pass producing internally contradictory profiles (a "gruff old sailor" reassigned to high pitch) and expressive clip scoring that optimizes for raw variance rather than character-profile alignment. Both have clear mitigation strategies documented in the research.
 
 ## Key Findings
 
 ### Recommended Stack
 
-No new dependencies are required. The entire v1.2 feature set builds on existing libraries. This is a significant finding -- it means zero installation risk and no memory budget changes.
+No new installations required. The existing Python 3.11 + Pydantic + Ollama/Qwen3 + mlx-audio stack handles all v1.3 features. Two transitive dependencies need promotion to explicit deps in pyproject.toml.
 
-**Core technologies (all existing, unchanged):**
-- **Qwen3-TTS 1.7B Base via mlx-audio** -- TTS engine stays on Base model for voice cloning. No model switch.
-- **pedalboard PitchShift** -- adds pitch shifting as a third post-processing dimension alongside volume and speed. Already installed at >=0.9.22.
-- **Pydantic** -- VoiceProfile data model unification. Pure schema refactor using existing library.
-- **numpy** -- audio signal processing for speed/volume adjustments. Already the backbone of post_processor.py.
+**Core technologies:**
+- **librosa >=0.10.0** (already installed v0.11.0): Pitch variance via `pyin()`, energy variance via `feature.rms()`, speaking rate via `onset_detect()` -- the three audio analysis functions needed for expressive clip scoring
+- **PyYAML >=6.0** (already installed v6.0.3): Load `voice_overrides.yaml` for manual per-character voice profile tuning -- YAML chosen over JSON/TOML because overrides are user-edited config that benefits from comments and clean nesting
+- **Existing Ollama + Qwen3 14B**: Handles both opinionated extraction prompts and any LLM-assisted distinctiveness reasoning without adding a new model
 
-**What NOT to add:** CustomVoice model (loses voice cloning), VoiceDesign model (loses real human voices), librosa (heavy deps for what numpy handles), any separate emotion NLP model (LLM already does this).
+**What NOT to add:** parselmouth (heavy C++ binary), crepe (neural pitch tracker needing GPU), opensmile (6000+ features when we need 3), FuzzyWuzzy/rapidfuzz (stdlib SequenceMatcher is sufficient for <100 profiles), networkx (set operations handle co-occurrence).
 
 ### Expected Features
 
 **Must have (table stakes):**
-- **Unified VoiceProfile** -- merge duplicated VoiceQualities + VoiceBaseline into one model. Prerequisite for everything else.
-- **Voice matching uses unified profile** -- trait_matcher and embedding_matcher consume the richer unified data.
-- **Scene mood influences synthesis** -- the emotion data extracted in v1.1 must actually affect audio output. Without this, v1.2 delivers nothing perceptible.
-- **Line-level emotion overrides influence synthesis** -- high-contrast moments (laughing at a funeral) sound different from the scene's default mood.
+- Cross-name exclusion in alias/substring merge -- prevents "Bennet" absorbing all Bennet family members
+- Co-occurrence guard on ALL merge stages (currently only on Stage 4 LLM consolidation)
+- Surname-only exclusion hardening for 1-part vs multi-part names
+- Extraction prompt hardening with negative examples
+- Trait count cap (30) to prevent unbounded accumulation
+- Merge diagnostics via `merge_audit.json` -- essential for diagnosing merge failures
+- Post-merge validation flagging cross-contaminated profiles
+- Voice overrides via `voice_overrides.yaml` -- users need manual control when automated matching fails
 
 **Should have (differentiators):**
-- **Emotion-to-post-processing expansion** -- extend volume/speed with pitch shifting, intensity scaling, and emotion-category deltas. Low risk, additive.
-- **Text-cue injection** -- prepend natural-language emotion cues to segment text to leverage Qwen3-TTS's text-semantic prosody. Effectiveness uncertain; needs empirical testing with a feature flag.
-- **Cached voice_clone_prompt per character** -- performance optimization eliminating redundant reference audio processing.
+- Opinionated voice profile extraction (`--opinionated` flag) with sharpened prompts
+- Post-extraction distinctiveness pass pushing similar profiles apart
+- Expressive reference clip scoring (pitch/energy/rate variance)
+- Rate-match reference clips to character profile pace
 
-**Defer (v2+):**
-- **VoiceDesign-then-Clone pipeline** -- generate styled reference clips per character using VoiceDesign model. High complexity, unclear value vs simpler approaches. Evaluate only if text cues and post-processing prove insufficient.
-- **Per-word emphasis marking** -- no mechanism in Base model for word-level control.
-- **Emotion interpolation between scenes** -- over-engineering; scene breaks are natural transition points in audiobooks.
+**Defer:**
+- Cross-book voice consistency, full upfront LibriTTS-R feature extraction, LLM-based audio quality assessment, automatic merge auto-correction/splitting, real-time merge visualization
 
 ### Architecture Approach
 
-The existing six-phase sequential pipeline remains unchanged. The key architectural addition is a new `expression.py` module that resolves three emotion layers (character baseline, scene mood, line override) into a single `ExpressionParams` dataclass consumed by the extended post-processor. The synthesis loop gains two new data inputs (emotion.json, characters.json) but the TTS engine API is untouched. All expression is applied as audio post-processing after generation.
+The existing 6-phase sequential pipeline (Parse, Attribute, Match, Synthesize, Verify, Assemble) remains unchanged. All v1.3 changes slot into Phase 2 (Attribute) and Phase 3 (Match) without cross-phase coupling. Two new files are needed: `src/attribution/distinctiveness.py` for the post-merge distinctiveness pass and voice override application, and `src/matching/expressive_scorer.py` for multi-criteria clip scoring. The merger return type changes to include an audit dict, and clip_selector gains a `target_pace` parameter, but all JSON artifact schemas (characters.json, voice_map.json) remain backward-compatible with additive-only field changes.
 
 **Major components:**
-1. **VoiceProfile model** (`models.py` MODIFY) -- unified voice description replacing two overlapping models
-2. **Expression resolver** (`expression.py` NEW) -- resolves three emotion layers into concrete audio parameters with clear precedence rules
-3. **Extended post-processor** (`post_processor.py` EXTEND) -- applies volume, speed, and pitch adjustments driven by ExpressionParams
-4. **Synthesis wiring** (`synthesizer.py` MODIFY) -- loads emotion.json + characters.json, builds lookups, calls expression resolver per segment
+1. **merger.py (MODIFY)** -- Cross-name exclusion, co-occurrence on all 4 stages, trait cap, merge diagnostics, post-merge validation
+2. **distinctiveness.py (NEW)** -- Deterministic rule-based push of similar voice profiles apart, voice override YAML loading and application
+3. **expressive_scorer.py (NEW)** -- Pitch/energy/rate variance computation via librosa, multi-criteria composite scoring with character-profile alignment
+
+**Key data flow change:** extract -> merge (hardened) -> merge_audit.json -> push_voices_apart (--opinionated) -> apply_voice_overrides -> characters.json -> trait_matcher -> clip_selector (multi-criteria) -> voice_map.json
 
 ### Critical Pitfalls
 
-1. **Base model cannot accept style instructions** -- do not add an `instruct` parameter to the TTS engine. All expression is post-processing. Any code that constructs style prompts for the Base model is wasted effort.
-2. **Data model merge breaks existing artifacts** -- add VoiceProfile as a computed field with migration from old schema. Keep LLM extraction producing the old fields; merge happens in Python. Version the characters.json format.
-3. **Speech-act and emotion post-processing conflict** -- define a strict resolution function that returns a single set of parameters, not sequential independent adjustments. Line override replaces scene mood (not additive). Clamp combined values to safe ranges.
-4. **Voice matching quality regression** -- keep structured fields for matching prompts; do not rely solely on free-text description. A/B test matching results before and after the change.
-5. **Emotion data never reaching synthesis** -- wire the data flow first with no-op processing and logging. Verify data reaches the right place before implementing audio modifications.
+1. **Cascading merge contamination** -- `_merge_two_profiles()` blindly unions all aliases and traits. One false positive in Stage 2 snowballs through Stages 3-4, absorbing entire casts. **Avoid:** Cross-name exclusion set rebuilt before each stage, trait count cap at 30, post-stage validation.
+
+2. **Substring match false positives on short names** -- "Ann" matches "Annabelle", "Jane" matches "Jane Fairfax" via character-level substring. **Avoid:** Require word-boundary matching (split by space), cross-name exclusion blocks absorption when the short name is another character's canonical name.
+
+3. **Opinionated extraction returns cached conservative results** -- Cache key does not include extraction mode, so `--opinionated` silently gets old profiles. **Avoid:** Include extraction mode in cache key (`extraction_v2` vs `extraction_v2_opinionated`).
+
+4. **Distinctiveness pass produces incoherent profiles** -- Pushing a "gruff old sailor" to high pitch optimizes inter-character distinctiveness at the cost of intra-profile coherence. **Avoid:** Only change the least-constrained dimension, cap changes to 2-3 fields per profile, include character description as context.
+
+5. **Expressive clip scoring ignores character profile** -- High-variance clips are "most expressive" but wrong for calm characters. **Avoid:** Use character pace/energy for primary filtering, expressiveness as tiebreaker. Rate-match is the primary signal, not raw variance.
 
 ## Implications for Roadmap
 
 Based on research, suggested phase structure:
 
-### Phase 1: Data Model Unification and Migration
+### Phase 1: Merger Hardening
 
-**Rationale:** Every downstream feature depends on the unified VoiceProfile schema. This is a pure refactor with zero TTS changes -- lowest risk, highest unblocking value.
-**Delivers:** Single VoiceProfile model replacing VoiceQualities + VoiceBaseline. Backward-compatible migration for existing characters.json. Updated LLM extraction post-processing (LLM schema stays the same; merge happens in Python).
-**Addresses:** Unified voice_profile (table stakes), voice matching enhancement
-**Avoids:** Pitfall 2 (data model breaks artifacts), Pitfall 4 (matching regression)
+**Rationale:** The merger is the root cause of the v1.3 milestone. Every downstream feature (opinionated profiles, expressive clips) depends on correctly-merged character profiles. One false positive merge cascades through the entire pipeline. Fix the foundation first.
+**Delivers:** Reliable character deduplication with full audit trail, cross-name exclusion on all 4 merge stages, co-occurrence guards on stages 2-3 (extending existing stage 4 guard), surname-only hardening for 1-part names, trait count cap, post-merge validation, merge_audit.json
+**Addresses:** All 7 table-stakes features from FEATURES.md (cross-name exclusion, co-occurrence guard, surname-only hardening, extraction prompt hardening, trait cap, merge diagnostics, post-merge validation)
+**Avoids:** Pitfall 1 (cascading contamination), Pitfall 2 (substring false positives), Pitfall 7 (LLM consolidation on contaminated profiles)
+**Stack:** Pure Python + Pydantic (no new deps)
+**Estimated complexity:** ~250 LOC new code, heavy modification of merger.py
 
-### Phase 2: Expression System Core
+### Phase 2: Opinionated Voice Profiles
 
-**Rationale:** The expression resolver must exist before the post-processor can be extended or the synthesizer can be wired. This phase creates the central abstraction that all emotion conditioning flows through.
-**Delivers:** `expression.py` with ExpressionParams dataclass and `resolve_expression()` function. MOOD_PARAMS, INTENSITY_MULTIPLIER, and PACE_MAP lookup tables. Unit tests covering all layer combinations and edge cases.
-**Addresses:** Three-layer TTS conditioning stack (differentiator)
-**Avoids:** Pitfall 3 (speech-act + emotion conflict) by designing the resolution function with clear precedence from the start
+**Rationale:** With clean merged profiles from Phase 1, the pipeline can now produce distinctive, character-appropriate voice descriptions. This phase transforms generic "medium pitch, moderate pace" profiles into polarized, differentiated voice characteristics that enable meaningful voice matching.
+**Delivers:** `--opinionated` CLI flag, sharpened extraction prompt, deterministic distinctiveness pass (`push_voices_apart()`), voice override loading and application from `voice_overrides.yaml`
+**Addresses:** All 4 differentiator features from FEATURES.md (opinionated extraction, distinctiveness pass, extraction-time sharpening, voice overrides)
+**Avoids:** Pitfall 3 (generic opinionated profiles -- two prompt variants needed), Pitfall 4 (contradictory distinctiveness -- constrain changes to least-anchored fields), Pitfall 6 (overrides silently ignored -- apply LAST, validate against VoiceProfile schema)
+**Stack:** PyYAML (promote to explicit dep), existing Ollama/Qwen3 for extraction
+**Estimated complexity:** ~280 LOC new code (distinctiveness.py + voice_overrides), prompt modifications in extractor.py
 
-### Phase 3: Post-Processing Extension and Synthesis Wiring
+### Phase 3: Expressive Reference Clip Selection
 
-**Rationale:** With the data model stable and expression resolver ready, this phase connects everything: loads emotion.json in the synthesis loop, resolves expression per segment, applies audio adjustments including pitch shifting. This is the integration phase where the feature becomes audible.
-**Delivers:** Extended `apply_expression()` in post_processor.py with pitch shifting via pedalboard. Synthesis loop loads emotion.json + characters.json, builds segment lookups, calls expression resolver. Feature flag (`--expression`) for opt-in. Graceful fallback when emotion.json is missing.
-**Addresses:** Scene mood influences synthesis (table stakes), line-level overrides (table stakes), emotion-to-post-processing expansion (differentiator)
-**Avoids:** Pitfall 5 (emotion data not reaching synthesis) by wiring data flow first with logging before audio modifications
-
-### Phase 4: Text-Cue Injection (Experimental)
-
-**Rationale:** This is the highest-uncertainty feature. Prepending emotion cues to segment text may improve prosody, or the model may speak the cues aloud. Must be tested empirically with multiple cue formats. Depends on all prior phases being stable.
-**Delivers:** Emotion-to-text-cue injection with configurable cue format. Feature flag to enable/disable. A/B comparison tooling for evaluating effectiveness.
-**Addresses:** Emotion-to-text-cue injection (differentiator)
-**Avoids:** N/A -- this phase IS the risk. Failure mode is well-defined (cues spoken aloud = disable feature).
-
-### Phase 5: Performance and Polish
-
-**Rationale:** Optimization and UX improvements after core features are working. Includes cached voice_clone_prompt (faster synthesis), preview tooling, and checkpoint compatibility verification.
-**Delivers:** Cached voice_clone_prompt per character. `--preview-segment N` flag for A/B comparison. Logging of emotion-affected segments. Checkpoint metadata with feature hash.
-**Addresses:** Cached voice_clone_prompt (differentiator), UX pitfalls
-**Avoids:** Performance traps (loading emotion.json per segment, recomputing profiles)
+**Rationale:** With distinctive, correctly-merged voice profiles, clip selection can now match clips to character traits rather than just duration. This is the highest-complexity phase (audio I/O intensive) but produces the most audible improvement in final audiobook quality.
+**Delivers:** Multi-criteria clip scoring (duration 0.3 + SNR 0.3 + pitch variance 0.15 + energy variance 0.15 + rate match 0.1), character-profile-aware clip selection, lazy computation with per-speaker caching
+**Addresses:** Expressive clip scoring and rate-matching differentiator features from FEATURES.md
+**Avoids:** Pitfall 5 (clip scoring ignores character context -- rate-match and energy-match are primary signals, raw variance is tiebreaker)
+**Stack:** librosa (promote to explicit dep), numpy (existing)
+**Estimated complexity:** ~300 LOC new code (expressive_scorer.py), modification of clip_selector.py and orchestrator.py
 
 ### Phase Ordering Rationale
 
-- **Data model before everything** because VoiceProfile schema changes propagate through matching, extraction, and synthesis. Getting this wrong poisons all downstream work.
-- **Expression resolver before post-processor** because ExpressionParams defines the contract between emotion data and audio processing. The post-processor must consume a well-defined input.
-- **Synthesis wiring after post-processor** because the synthesizer is the integration point -- both the resolver and post-processor must be ready.
-- **Text-cue injection is isolated** because it has the highest uncertainty and can be added or removed without affecting the post-processing approach.
-- **Performance last** because optimization before correctness is premature. Cached voice_clone_prompt is valuable but not blocking any feature.
+- **Phase 1 before Phase 2:** Opinionated profiles on contaminated merges produce wrong voice assignments. The merger is the data quality foundation.
+- **Phase 2 before Phase 3:** Expressive clip selection uses `VoiceProfile.pace` for rate-matching. If pace is "unknown" (non-opinionated default), rate-matching degrades to a no-op. Distinctive profiles make clip selection meaningful.
+- **Extraction prompt hardening in Phase 1, not Phase 2:** The prompt change improves raw extraction quality for ALL features. It also invalidates the extraction cache, so it should happen early to avoid re-running extraction later.
+- **Voice overrides in Phase 2, not as independent phase:** Overrides are low-complexity (~80 LOC) and share the same integration point (distinctiveness.py) as the distinctiveness pass. Grouping them avoids touching pipeline.py twice.
 
 ### Research Flags
 
 Phases likely needing deeper research during planning:
-- **Phase 3 (Synthesis Wiring):** The emotion.json structure (scene ranges, segment ID mapping) needs careful inspection during implementation. The lookup from segment_id to scene mood involves range queries, not direct ID matching.
-- **Phase 4 (Text-Cue Injection):** Entirely empirical. No documentation on how Qwen3-TTS Base responds to prepended cue text. Multiple cue formats must be tested. Consider building a small test harness before committing to an approach.
+- **Phase 2 (Opinionated Profiles):** The distinctiveness pass design needs careful constraint specification -- which fields are "anchored" by text evidence vs. freely modifiable. The architecture research recommends deterministic rule-based push (no LLM), but PITFALLS.md warns this can produce incoherent profiles. Needs design iteration.
+- **Phase 3 (Expressive Clips):** The scoring weight calibration (0.4/0.35/0.25 in STACK.md vs 0.3/0.3/0.15/0.15/0.1 in ARCHITECTURE.md) is unvalidated. Needs empirical tuning against actual LibriTTS-R data. Pitch variance normalization factor and pace thresholds need calibration.
 
 Phases with standard patterns (skip research-phase):
-- **Phase 1 (Data Model):** Well-understood Pydantic migration pattern. Backward compatibility approach is clearly documented.
-- **Phase 2 (Expression System):** Pure Python data resolution logic. No external dependencies or API uncertainty.
-- **Phase 5 (Performance):** mlx-audio's `create_voice_clone_prompt()` API is documented. Standard caching pattern.
+- **Phase 1 (Merger Hardening):** All changes are in well-understood code paths (merger.py). The fixes are set operations, guard checks, and Pydantic models. No novel patterns. The codebase analysis provides line-number-level integration points.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | Zero new deps. Base model limitation verified via official HuggingFace docs, technical report, and installed source code. |
-| Features | MEDIUM | Table stakes are clear. Text-cue injection effectiveness is unverified. VoiceDesign pipeline deferred due to complexity uncertainty. |
-| Architecture | MEDIUM-HIGH | Data flow and component boundaries are well-defined. Post-processing approach is proven by existing speech-act system. Expression resolution logic is straightforward. |
-| Pitfalls | HIGH | Grounded in actual codebase inspection and verified API limitations. Recovery strategies identified for each pitfall. |
+| Stack | HIGH | Zero new installs. Both libraries verified present in venv with correct versions. All integration points confirmed in codebase. |
+| Features | HIGH | Feature list derived from PROJECT.md active requirements and codebase analysis. Dependency ordering verified against actual data flow. |
+| Architecture | HIGH | All integration points reference specific files and line numbers in existing codebase. Phase boundaries and artifact contracts confirmed unchanged. |
+| Pitfalls | HIGH | Every pitfall references specific code paths (merger.py lines 250-315, extractor.py lines 43-87, etc.) with concrete reproduction scenarios. |
 
-**Overall confidence:** MEDIUM -- the architecture and stack are solid, but the core question of "how expressive can post-processing make the output?" requires empirical validation. The post-processing approach is the right one given the constraints, but the magnitude of perceptible improvement is unknown until implemented and listened to.
+**Overall confidence:** HIGH -- All research is grounded in actual codebase analysis, not hypothetical patterns. The v1.3 features are incremental improvements to an existing, working pipeline.
 
 ### Gaps to Address
 
-- **Post-processing expressiveness ceiling:** How much emotion can volume/speed/pitch adjustments actually convey? The parameter values in EMOTION_DELTAS and MOOD_PARAMS are educated guesses that need tuning against real audiobook output. Plan for an iterative tuning cycle in Phase 3.
-- **Text-cue injection viability:** Will Qwen3-TTS Base speak the cue text aloud, ignore it, or use it for prosody? This is a binary unknown that determines whether Phase 4 delivers value or gets disabled. Test early with a simple prototype.
-- **Optimal emotion delta values:** STACK.md and FEATURES.md propose slightly different parameter values for the same emotions. These need empirical calibration. Neither set is validated.
-- **Checkpoint re-synthesis scope:** When emotion conditioning is enabled for a book previously synthesized without it, which segments need re-synthesis? A naive approach re-synthesizes everything; a smart approach only re-synthesizes segments with non-neutral mood or line overrides.
+- **Expressiveness scoring weights:** The optimal balance between duration, SNR, pitch variance, energy variance, and rate-match is unknown. STACK.md proposes 0.4/0.35/0.25 (3-factor), ARCHITECTURE.md proposes 0.3/0.3/0.15/0.15/0.1 (5-factor). Needs A/B testing during Phase 3 implementation.
+- **Pitch variance normalization:** Dividing by 50.0 Hz for normalization may need per-gender tuning (male F0 range differs from female). Validate against LibriTTS-R speaker distribution.
+- **Distinctiveness pass constraint design:** Whether to use deterministic rules (ARCHITECTURE.md recommendation) or LLM with context (PITFALLS.md alternative). The rule-based approach is faster and more predictable but less nuanced. Resolve during Phase 2 planning.
+- **Cache invalidation for opinionated mode:** The extraction cache key must include the prompt variant. Implementation detail, but missing it causes a silent, hard-to-diagnose failure (Pitfall 3).
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- [Qwen3-TTS Technical Report](https://arxiv.org/html/2601.15621v1) -- Base model capabilities and limitations
-- [Qwen3-TTS-12Hz-1.7B-Base HuggingFace](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-Base) -- API surface, no instruct support
-- [Qwen3-TTS-12Hz-1.7B-CustomVoice HuggingFace](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice) -- 9 preset speakers only
-- [Qwen3-TTS GitHub](https://github.com/QwenLM/Qwen3-TTS) -- official model comparison
-- [pedalboard docs](https://spotify.github.io/pedalboard/) -- PitchShift API verified
-- [mlx-audio GitHub](https://github.com/Blaizzy/mlx-audio) -- generate API surface
-- Installed mlx-audio source code (`qwen3_tts.py` lines 687-812) -- verified Base model routing
+- Codebase analysis: merger.py (697 LOC), extractor.py (354 LOC), clip_selector.py (172 LOC), trait_matcher.py (407 LOC), orchestrator.py (311 LOC), models.py (VoiceProfile schema)
+- Installed package verification: librosa 0.11.0, PyYAML 6.0.3, numpy 2.4.2, scipy 1.17.1, soundfile 0.13.1 confirmed in venv
+- PROJECT.md v1.3 milestone definition and known root causes
 
 ### Secondary (MEDIUM confidence)
-- [GitHub Discussion #231](https://github.com/QwenLM/Qwen3-TTS/discussions/231) -- community confirms Base ignores instruct
-- [Qwen3-TTS Voice Cloning Guide 2026](https://ocdevel.com/blog/20260302-qwen-tts-voice-cloning) -- VoiceDesign-then-Clone workflow
-- [Enhanced Prosody Modeling for Audiobook Synthesis (ACM 2025)](https://dl.acm.org/doi/10.1145/3749644) -- hierarchical prosody patterns
-- [Controlling Emotion in TTS with NL Prompts (Interspeech 2024)](https://arxiv.org/html/2406.06406v1) -- text-based emotion approaches
-- [FlexiVoice paper](https://arxiv.org/html/2601.04656v1) -- Style-Timbre-Content conflict research
-- [Pydantic backward compatibility patterns](https://roman.pt/posts/pydantic-as-backward-compatibility-layer/)
+- librosa documentation: pyin(), feature.rms(), onset.onset_detect() API and parameters
+- PyYAML safe_load documentation
+- LibriTTS-R dataset characteristics (24kHz mono 16-bit WAV, ~2,443 speakers)
+- Qwen3-TTS voice cloning behavior (reference clip prosodic range influences output)
 
 ### Tertiary (LOW confidence)
-- Pitch shift quality at sub-semitone levels via pedalboard -- needs empirical testing
-- Base model responsiveness to punctuation/word-choice prosody cues -- needs A/B testing
-- Optimal EMOTION_DELTAS parameter values -- need tuning against real output
+- Expressiveness scoring weight proposals (need empirical calibration)
+- Pitch variance normalization factors (need per-gender tuning)
+- Speaking rate thresholds for pace matching (need LibriTTS-R calibration)
+- Whether higher expressiveness clips actually improve TTS voice cloning quality (reasonable assumption, unvalidated)
 
 ---
-*Research completed: 2026-03-06*
+*Research completed: 2026-03-09*
 *Ready for roadmap: yes*

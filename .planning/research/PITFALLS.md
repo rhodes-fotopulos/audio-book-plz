@@ -1,162 +1,196 @@
-# Pitfalls Research: v1.2 Voice Expression
+# Pitfalls Research: v1.3 Voice Quality
 
-**Domain:** Adding voice style conditioning and emotion-to-prosody to existing TTS pipeline with data model migration
-**Researched:** 2026-03-06
-**Confidence:** HIGH -- Verified against actual mlx-audio source code in .venv, existing codebase models, Qwen3-TTS official documentation, and Hugging Face model cards. Data model pitfalls grounded in actual Pydantic schema inspection.
+**Domain:** Merger hardening, opinionated voice profiles, and expressive reference clip selection for existing audiobook generation pipeline
+**Researched:** 2026-03-09
+**Confidence:** HIGH -- Grounded in actual codebase analysis of merger.py (697 lines), extractor.py (354 lines), clip_selector.py (172 lines), trait_matcher.py (407 lines), and models.py. All pitfalls reference specific code paths, not hypothetical patterns.
 
 ---
 
 ## Critical Pitfalls
 
-### Pitfall 1: Base Model Cannot Accept Style Instructions -- Fundamental Architecture Mismatch
+### Pitfall 1: Cascading Merge Contamination from _merge_two_profiles() Blind Union
 
 **What goes wrong:**
-The project uses `Qwen3-TTS-12Hz-1.7B-Base` for voice cloning. The v1.2 milestone plans to "feed voice_profile description to Qwen3-TTS as style conditioning per character." But the Base model's generation path **does not accept an `instruct` parameter**. Verified in the installed mlx-audio source (`qwen3_tts.py` line 785-812): when `ref_audio` and `ref_text` are provided (voice cloning mode), the code routes to `_generate_icl()` which accepts only `text`, `ref_audio`, `ref_text`, `language`, `temperature`, `max_tokens`, `top_k`, `top_p`, `repetition_penalty`, and `verbose`. There is no style/instruct input.
+`_merge_two_profiles()` (merger.py line 250-315) unions ALL aliases and ALL personality_traits from both profiles with zero filtering. When a false-positive merge occurs -- e.g., a fuzzy match incorrectly links "Mrs. Bennet" to "Elizabeth Bennet" -- every subsequent merge stage inherits the contaminated alias set and trait list. The alias set now contains names of BOTH characters, which triggers _alias_overlap() on future comparisons, pulling in even more unrelated characters. One bad merge in Stage 2 (fuzzy) cascades through Stage 3 (substring/alias) and Stage 4 (LLM consolidation), producing a mega-profile with 200+ traits and aliases spanning the entire cast.
 
-Attempting to pass style descriptions to the Base model will either silently ignore them (if added as unused kwargs) or require switching to the CustomVoice model variant -- which does not support arbitrary voice cloning from reference audio, only 9 preset voices.
+The root cause is that merges are applied greedily and irreversibly within each stage. Once `current = _merge_two_profiles(current, candidate)` executes on line 234, the contaminated profile replaces the original for all subsequent comparisons in the same loop iteration.
 
 **Why it happens:**
-The Qwen3-TTS family separates voice cloning (Base) from style control (CustomVoice/VoiceDesign) into different model variants with incompatible generation paths. The project's key decision "Speech-act post-processing over TTS instruct -- Base model ignores instruct prompts with cloned voices" already acknowledges this, but the v1.2 milestone description ("Feed voice_profile description to Qwen3-TTS as style conditioning") directly contradicts this constraint.
+The merger was designed for the common case where merges are correct. There is no validation between merge stages, no trait cap, and no cross-name exclusion. The `_names_share_surname_only()` guard (line 60-91) only fires for names with 2+ parts, so it misses "Elizabeth" matching as a substring of "Elizabeth Bennet" when the other profile's canonical name is just "Bennet" (1 part).
 
 **How to avoid:**
-Accept that style conditioning via text descriptions is NOT available on the Base model with voice cloning. The v1.2 approach must be one of:
-1. **Post-processing only** (current approach, extended): Use the unified voice_profile data to improve voice matching and post-processing parameters, NOT to instruct the TTS engine directly.
-2. **Model swap to CustomVoice**: Lose arbitrary voice cloning (only 9 preset voices) but gain `instruct` parameter for style control.
-3. **Dual-model approach**: Use Base for cloning + CustomVoice for style-conditioned narration (doubles memory, complex orchestration).
-4. **Fine-tune Base model**: Single-speaker fine-tuning is documented as supported, but requires training infrastructure and per-book effort.
-
-Recommendation: Option 1 (post-processing extension) is the only viable path that preserves the existing voice cloning pipeline. Use voice_profile data upstream (better matching) and downstream (richer post-processing) but do not attempt to pass it into TTS generation.
+1. **Cross-name exclusion list**: Before merging A into B, check that none of A's aliases appear as canonical names of OTHER profiles in the registry. If "Jane" is a canonical name for profile #3, it cannot be absorbed as an alias of profile #7 ("Mrs. Bennet"). Build the exclusion set once before each stage starts: `protected_names = {p.name.lower() for p in profiles}`.
+2. **Trait count cap**: After every `_merge_two_profiles()` call, truncate `personality_traits` to 30 items (configurable). Keep the first N traits since primary profile traits come first in the deduplicated union. Log a warning when capping triggers.
+3. **Post-stage validation**: After each merge stage, scan for profiles whose alias set intersects with another profile's canonical name set. Flag these as likely false positives and reverse the merge (keep both profiles separate).
+4. **Immutable originals**: Store original pre-merge profiles in a list. If post-stage validation detects contamination, restore from originals instead of trying to untangle the merged result.
 
 **Warning signs:**
-- Code that constructs a text prompt/instruct string from voice_profile data
-- Changes to `qwen_engine.py` that add an `instruct` parameter to the `generate()` call
-- TTS output that sounds identical regardless of voice_profile content (because instructions are silently ignored)
-- Any plan requiring "the TTS engine to interpret emotional context"
+- A profile with more than 30 personality_traits after merging
+- A profile whose aliases include canonical names of other profiles in the registry
+- Total profile count dropping by more than 40% through the merge pipeline
+- A single profile accumulating aliases that span both genders (e.g., "Mr. Darcy" and "Elizabeth" as aliases of the same profile)
 
 **Phase to address:**
-Phase 1 (architecture/design). This must be resolved before any implementation begins. The entire v1.2 feature design hinges on understanding this constraint.
+Phase 1 (merger hardening). This is the core bug driving the entire milestone. Fix before anything else.
 
 ---
 
-### Pitfall 2: Data Model Merge Breaks Existing JSON Artifacts and Checkpoints
+### Pitfall 2: Substring Match False Positives on Common Name Components
 
 **What goes wrong:**
-Merging `voice_qualities` + `voice_baseline` into a single `voice_profile` field changes the `CharacterProfile` schema. Every existing pipeline output depends on this schema:
-- `characters.json` contains `voice_qualities` and optional `voice_baseline` fields
-- `voice_map.json` was built from characters with the old schema
-- Attribution cache (`.cache/`) stores raw LLM responses with the old field names
-- The LLM prompt for character extraction produces `voice_qualities` in its structured output
+`_names_match_substring()` (merger.py line 33-57) returns True when one name contains the other as a substring, with only a MIN_SUBSTRING_LENGTH=3 guard. This produces false positives for common English name fragments:
+- "Ann" matches "Anne", "Anna", "Annabelle", "Joanna", "Marianne" -- all different characters
+- "Ben" matches "Bennet", "Benedict", "Benjamin"
+- "Will" matches "William", "Willoughby"
+- "Jane" matches "Jane Bennet", "Jane Fairfax" -- could be different Janes in different novels
 
-Breaking the schema means:
-1. Existing book directories cannot resume or re-run individual phases
-2. The LLM structured output format must change (new JSON schema for Ollama)
-3. All cached extraction results become invalid
-4. Tests that validate model serialization break
+The surname-only guard (`_names_share_surname_only`) requires BOTH names to have 2+ parts, so it cannot block "Jane" (1 part) from matching "Jane Fairfax" (2 parts). Once merged, the alias set of "Jane Fairfax" now contains "Jane", which then matches any other profile with "Jane" as a substring.
 
 **Why it happens:**
-Pydantic models serve as both runtime objects AND serialization schemas AND LLM output formats in this project. A field rename propagates through the LLM prompt schema, JSON artifacts on disk, and runtime code simultaneously.
+Substring matching is inherently aggressive. The MIN_SUBSTRING_LENGTH=3 threshold was set to exclude "I", "Mr", etc., but common 3-4 letter name fragments are legitimate given names in English literature.
 
 **How to avoid:**
-1. **Add `voice_profile` as a NEW computed field** rather than removing the old fields. Use a `@model_validator` or `@computed_field` on `CharacterProfile` that constructs `voice_profile` from the existing `voice_qualities` + `voice_baseline` at load time. Old JSON files remain loadable.
-2. **Write a one-time migration function** for existing `characters.json` files that populates the new field from old data and is called at the start of the matching phase.
-3. **Keep the LLM schema unchanged**. The LLM still outputs `voice_qualities` + `voice_baseline`. The merge into `voice_profile` happens in Python after LLM extraction, not in the LLM prompt.
-4. **Version the `characters.json` format**. Add a `schema_version` field so code can detect old-format files and auto-migrate.
+1. **Raise MIN_SUBSTRING_LENGTH to 4** and require the shorter name to be a WORD BOUNDARY match, not just a substring. "Ann" should not match "Annabelle" but "Jane" should match "Miss Jane Bennet" (where "Jane" appears as a complete word).
+2. **Cross-name exclusion**: If "Jane" is a canonical name for ANY profile in the current registry, do not allow it to be matched as a substring of another profile's name. This is the same exclusion list from Pitfall 1.
+3. **Require the substring match to be on a name PART (split by space)**, not a character-level substring. "Jane" in "Jane Fairfax" is a word match (good). "Ann" in "Annabelle" is a character-level substring (bad).
 
 **Warning signs:**
-- `pydantic.ValidationError` on loading existing `characters.json`
-- LLM extraction returning empty/malformed results after schema change
-- Checkpoint validation failures on resume
-- Tests passing locally but failing on CI with fixture data
+- Characters with short first names (3-4 letters) getting merged with unrelated characters
+- Merge log showing substring matches on character substrings rather than word boundaries
+- Multiple characters sharing a common name component all collapsing into one profile
 
 **Phase to address:**
-Phase 1 (data model migration). Do this FIRST, verify backward compatibility, then build features on top.
+Phase 1 (merger hardening). Fix alongside the cross-name exclusion from Pitfall 1.
 
 ---
 
-### Pitfall 3: Speech-Act Post-Processing Conflicts with New Emotion Conditioning
+### Pitfall 3: Opinionated Voice Profiles Without Extraction Prompt Changes Produce Generic Descriptions
 
 **What goes wrong:**
-The v1.1 pipeline already applies post-processing adjustments based on speech-acts (whispered: -4.5 dB, shouted: +4.5 dB, thought: -3.0 dB). The v1.2 milestone adds scene mood and line-level emotion overrides. If both systems modify audio independently, they produce unpredictable results:
-- A whispered line (-4.5 dB) in an angry scene (could add +3 dB) = net -1.5 dB -- neither whispered nor angry
-- A shouted line (+4.5 dB, +8% speed) with a "fear" emotion override (could add speed decrease) = conflicting speed adjustments
-- Volume adjustments stack multiplicatively with the mastering chain's compressor and limiter, creating non-obvious interactions
+The current extraction prompt (extractor.py line 43-87) instructs the LLM to use "unknown" when unsure about a trait. This is correct for accuracy but produces voice profiles where most characters get `pitch: "unknown"`, `pace: "unknown"`, `tone: "unknown"` -- the exact opposite of "opinionated." Adding a post-extraction distinctiveness pass cannot fix profiles that are mostly "unknown" because there is nothing distinctive to work with.
 
-The current `post_processor.py` explicitly notes: "Adjustments are ABSOLUTE per speech-act type, NOT cumulative with scene mood (per user decision). Scene mood annotations are stored for future enrichment but do not modify audio in v1.1."
+The planned `--opinionated` flag needs the LLM to make INFERENCES from character personality, dialogue style, and narrative description rather than leaving fields as "unknown." This requires fundamentally different extraction prompt instructions, not just a post-processing step.
 
 **Why it happens:**
-Speech-acts and emotions operate on overlapping audio parameters (volume, speed). Without a clear priority model, adding emotion adjustments alongside existing speech-act adjustments creates a combinatorial explosion of edge cases.
+The "unknown when unsure" instruction was the right call for v1.0-v1.2 where accuracy mattered more than distinctiveness. But opinionated profiles need a different philosophy: "always infer something reasonable, never return unknown." These are contradictory instructions that cannot coexist in a single prompt without the `--opinionated` flag changing the entire prompt text.
 
 **How to avoid:**
-Define a strict priority hierarchy before implementing any emotion-to-audio mapping:
-1. **Speech-act takes priority** for the parameters it controls (volume, speed). These are hard phonological markers -- a whisper is physically quiet regardless of emotion.
-2. **Emotion adjusts only non-conflicting parameters** or adjusts WITHIN the speech-act's range. For example, emotion could modify pitch contour or add reverb effects, not override volume.
-3. **Build a parameter resolution function** that takes `(speech_act, scene_mood, line_override)` and returns a single `AdjustmentParams` with resolved values, not three independent adjustments applied sequentially.
-4. **Test the edge cases explicitly**: whispered+angry, shouted+fearful, thought+joyful. Listen to the output.
+1. **Two extraction prompts**: Keep the current conservative prompt as default. Create an opinionated variant that replaces "When unsure about a trait, use unknown" with "Always infer voice characteristics from the character's personality, age, social class, and dialogue style. A grumpy old man should have low pitch, slow pace, gruff tone -- do not leave these as unknown."
+2. **Add negative examples to the opinionated prompt**: Show the LLM what a BAD opinionated profile looks like (all medium/neutral values for every character) vs. a GOOD one (distinctive, exaggerated traits that differentiate characters from each other).
+3. **Extraction cache invalidation**: The opinionated prompt will produce different character profiles from the same chapter text. The cache key must include the prompt variant (`extraction_v2` vs `extraction_v2_opinionated`) or all opinionated runs will return cached conservative results.
 
 **Warning signs:**
-- Two separate functions both modifying the same audio array for different reasons
-- Volume or speed adjustments applied in sequence without awareness of each other
-- Audio that sounds "compressed" or "flat" after mastering because pre-mastering dynamics were lost to conflicting adjustments
-- The mastering limiter activating excessively (indicates clipping from stacked volume boosts)
+- Running with `--opinionated` but getting the same voice profiles as without it (cache hit on old extraction)
+- Opinionated profiles where most characters still have `pace: "moderate"`, `energy: "moderate"`, `tone: "neutral"` -- the LLM defaulted to safe middle values instead of truly unknown
+- All characters sounding similar despite opinionated extraction (the distinctiveness pass cannot differentiate profiles that use the same moderate values)
 
 **Phase to address:**
-Phase 2 or 3 (when wiring emotion data into synthesis). Must be designed together with the speech-act system, not bolted on afterward.
+Phase 2 (opinionated voice profiles). Must change the extraction prompt, not just add a post-processing pass. Cache invalidation is critical.
 
 ---
 
-### Pitfall 4: Voice Matching Quality Regression When Changing Input Data Shape
+### Pitfall 4: Distinctiveness Pass Produces Contradictory Profiles When Pushing Characters Apart
 
 **What goes wrong:**
-The `trait_matcher.py` builds character descriptions using `voice_qualities` fields (pitch, pace, tone, accent). The `embedding_matcher.py` likely uses similar trait text for embedding similarity. If v1.2 changes these fields to use `voice_profile` instead, the LLM prompts and embedding inputs change, which can subtly degrade matching quality:
-- LLM prompt format changes alter the casting-director's reasoning patterns
-- Embedding vectors from different input text produce different similarity scores
-- A unified `voice_profile.description` field (free-text) is harder for the LLM to parse than structured fields like `pitch: "low"`, `pace: "slow"`
+A post-extraction distinctiveness pass that "pushes similar voices apart" can produce internally contradictory profiles. If two characters both have `pitch: "low"` and `tone: "warm"`, the pass might change one to `pitch: "high"` -- but that character is described as "a gruff old sailor." A high-pitched gruff old sailor is absurd. The pass optimizes for inter-character distinctiveness at the cost of intra-profile coherence.
+
+Worse, if the distinctiveness pass uses an LLM, it may not have access to the original chapter text. It only sees the profiles in isolation and has no way to verify that the modified traits are consistent with the source material.
 
 **Why it happens:**
-Voice matching was tuned and validated with a specific input format. Changing the format changes the results even if the information content is the same.
+Distinctiveness is a pairwise property (character A vs B) while profile coherence is a unary property (character A's traits should make sense together). Optimizing one can degrade the other. This is the classic fairness-accuracy tradeoff applied to voice casting.
 
 **How to avoid:**
-1. **Keep the structured fields available for matching**. Even if you merge into `voice_profile`, expose the structured sub-fields (pitch, pace, tone, accent, energy, typical_emotion) for the matching prompts. Use `voice_profile.description` for human readability, not for LLM consumption.
-2. **A/B test matching quality**. Before committing the new data shape, run matching on 2-3 test books with both old and new input formats. Compare speaker assignments and confidence scores.
-3. **Do not change `_build_character_description()` format unless matching improves**. The existing format works. Enhance it with additional data (energy, typical_emotion from voice_baseline), do not restructure it.
+1. **Constrain the distinctiveness pass to fields without strong textual evidence**. If the extraction found `pitch: "low"` from "the old man grumbled in a deep voice," that pitch is ANCHORED and should not change. Only push apart traits that were inferred (not explicitly stated in text).
+2. **Use the distinctiveness pass to ADD differentiating traits, not CHANGE existing ones**. If two characters both have `pitch: "low"`, differentiate on pace, energy, or tone_style instead of changing pitch. The pass should look for the LEAST constrained dimension to push apart on.
+3. **Include the character description and personality traits as context for the LLM distinctiveness pass**. The LLM needs to know "gruff old sailor" before deciding which traits can change.
+4. **Cap changes per profile**: The distinctiveness pass can modify at most 2-3 fields per profile. If more changes are needed, the extraction prompt should be improved instead.
 
 **Warning signs:**
-- Average matching confidence drops after the change
-- Characters getting assigned voices with wrong gender or wildly inappropriate traits
-- The LLM returning invalid speaker_ids more frequently (hallucination from confusing prompt format)
+- Post-distinctiveness profiles where voice description contradicts individual trait fields
+- Characters whose voice profiles changed so much that the voice_profile.description no longer matches the traits
+- Listen tests where a character's voice does not match their described personality at all
 
 **Phase to address:**
-Phase 2 (after data model migration is stable). Test matching quality as a separate validation step.
+Phase 2 (opinionated voice profiles). Design the constraint system before implementing the LLM distinctiveness pass.
 
 ---
 
-### Pitfall 5: Emotion Data Not Reaching Synthesis Loop -- Silent Feature Gap
+### Pitfall 5: Expressive Clip Scoring Ignores the Clip Content Relevance to Character
 
 **What goes wrong:**
-The synthesis loop (`synthesizer.py`) currently reads segments from `attributed.json` which contains `speech_act` per segment but NOT emotion data. Emotion data lives in a separate `emotion.json` file. The synthesis loop never loads `emotion.json`. Adding emotion conditioning requires:
-1. Loading `emotion.json` alongside `attributed.json`
-2. Building a lookup from segment_id to scene mood and line overrides
-3. Passing this data through the generation loop to wherever it will be used
-4. Handling the case where `emotion.json` does not exist (backward compat with v1.0/v1.1 books)
+The current `clip_selector.py` selects clips purely by duration (closest to 12.5s target). The planned expressive scoring adds pitch/energy/rate variance metrics. But a clip with high pitch variance might be a dramatic reading of Shakespeare -- great variance metrics, terrible reference for a calm, measured character like Mr. Darcy. The scoring becomes a "most expressive clip" selector rather than a "best reference for THIS character" selector.
 
-The pitfall is implementing the emotion-to-audio mapping in isolation (e.g., a new post-processing function) without wiring it into the synthesis loop. The feature "works in tests" but never fires in production because the data flow is incomplete.
+The fundamental issue: expressive scoring ranks clips by how INTERESTING they sound, not by how well they match the target character's voice profile.
 
 **Why it happens:**
-The emotion data and synthesis code were built in separate v1.1 phases. They share no runtime connection. The gap is easy to miss because both halves "work" independently.
+Pitch/energy/rate variance are speaker-independent acoustic features. They tell you about the recording, not about whether the recording matches a specific character profile. High variance is desirable for an animated character but wrong for a monotone one.
 
 **How to avoid:**
-1. **Wire the data flow first, with no-op processing**. Load `emotion.json` in `run_synthesis()`, build the segment-to-mood lookup, pass mood data to the segment processing code, and log it. Verify the data reaches the right place before implementing any audio modifications.
-2. **Add a CLI flag** like `--emotion` or `--expression` that controls whether emotion conditioning is applied. Default OFF initially so it can be tested independently.
-3. **Handle missing emotion.json gracefully**. If the file does not exist (older book), default all moods to `NEUTRAL/LOW` and skip overrides. Do not crash.
+1. **Rate-match clips to character profile pace**: If character has `pace: "slow"`, prefer clips with lower speaking rate. If `pace: "fast"`, prefer higher rate clips. This is explicitly in the milestone requirements ("rate-matching to character profiles") but easy to implement as an afterthought instead of as the primary scoring signal.
+2. **Energy-match to character energy**: If character has `energy: "restrained"`, prefer clips with lower energy variance (more consistent, subdued delivery). If `energy: "animated"`, prefer high variance.
+3. **Use variance scoring as a TIEBREAKER, not primary signal**: First filter by rate/energy match to character profile, THEN among matching clips, prefer ones with richer variance (better for voice cloning quality). The primary signal should be character-profile alignment, not raw expressiveness.
+4. **SNR remains the floor filter**: Keep the existing SNR filtering as a minimum quality gate before any expressiveness scoring. A noisy clip with perfect expressiveness is still a bad reference.
 
 **Warning signs:**
-- Emotion post-processing function exists but is never called from `run_synthesis()`
-- No logging output mentioning mood or emotion during synthesis runs
-- Test coverage that mocks the data flow instead of testing the actual wiring
-- Scene mood annotations generated but never consumed
+- All characters getting clips from the same few highly-expressive speakers (the scoring always picks dramatic readings)
+- Calm characters sounding agitated because their reference clip was an expressive dramatic passage
+- Clip selection results that do not vary based on character profile (expressiveness score dominates, character match is irrelevant)
 
 **Phase to address:**
-Phase 2 or 3 (synthesis integration). This is primarily a plumbing task, not an algorithm task.
+Phase 3 (expressive reference clips). Must integrate character profile data into clip scoring, not just acoustic features.
+
+---
+
+### Pitfall 6: voice_overrides.yaml Silently Ignored Due to Load Order or Missing Schema Validation
+
+**What goes wrong:**
+The `voice_overrides.yaml` feature lets users manually specify voice traits per character. The pitfall is a silent failure mode: the file is loaded but its values are overwritten by extraction results (if loaded before extraction) or by the distinctiveness pass (if loaded before distinctiveness). The override must be applied LAST in the pipeline to actually take effect, but there is no validation that it was applied or that it changed anything.
+
+A second failure mode: the YAML schema is not validated. A user writes `pitch: loud` (invalid value for pitch, should be energy) and the override silently passes through Pydantic as-is (strings are strings). The invalid value then confuses downstream voice matching.
+
+**Why it happens:**
+Override systems need clear documentation of WHEN in the pipeline they apply and WHAT values are valid. Without validation, YAML is a stringly-typed footgun.
+
+**How to avoid:**
+1. **Apply overrides AFTER all automated processing** (extraction, merging, distinctiveness). The pipeline should be: extract -> merge -> opinionated pass -> distinctiveness pass -> apply overrides. Overrides are final, non-negotiable values.
+2. **Validate override YAML against the VoiceProfile schema**. Use Pydantic to parse each override entry. Reject unknown fields and provide clear error messages for invalid values.
+3. **Log each override application**: "Applied voice override for 'Mr. Darcy': pitch changed from 'medium' to 'low', tone changed from 'warm' to 'cold'". This makes overrides auditable.
+4. **Warn if an override character name does not match any character in the registry**. Typos in character names should not silently pass.
+
+**Warning signs:**
+- User specifies overrides but voice matching results do not change
+- No log output mentioning override application
+- Override YAML with invalid field names or values loads without error
+- Override applied to a character name that does not exist in the merged registry (typo)
+
+**Phase to address:**
+Phase 2 (opinionated voice profiles). Design the override application point and validation before implementing the YAML loading.
+
+---
+
+### Pitfall 7: LLM Consolidation Stage Operates on Already-Contaminated Profiles
+
+**What goes wrong:**
+The LLM consolidation stage (merger.py line 451-578) runs AFTER fuzzy matching and substring/alias matching. If either of those stages produced a false-positive merge, the LLM sees contaminated profiles with bloated alias lists and trait sets. The LLM then makes FURTHER merge decisions based on those inflated profiles. A profile that now lists both "Elizabeth" and "Mrs. Bennet" as aliases looks like it should merge with any profile mentioning either name.
+
+The co-occurrence guard (`_named_pair_cooccurs`) only blocks merges where BOTH profiles have `is_named=True` and appear in the same chapter. It does not catch contamination from earlier stages because the contaminated profile already absorbed the other character's identity.
+
+**Why it happens:**
+The 4-stage merge pipeline is sequential with no backtracking. Each stage trusts the output of the previous stage. There is no global validation that detects cross-contamination across stages.
+
+**How to avoid:**
+1. **Run cross-name exclusion BEFORE the LLM consolidation stage**: After stages 1-3, verify that no profile's alias set contains canonical names of other profiles. Remove such aliases before passing profiles to the LLM.
+2. **Add merge diagnostics (merge_audit.json)**: After each stage, log the full state of all profiles including what was merged and why. This makes it possible to trace contamination back to its source.
+3. **Cap aliases per profile**: No profile should have more than 10 aliases after merging. If it has more, it likely absorbed another character's identity. Flag for review.
+4. **Apply co-occurrence guard to ALL merge stages, not just LLM consolidation**: The fuzzy and substring stages currently do not check co-occurrence. If "Elizabeth" and "Mrs. Bennet" both appear in chapter 3, they should not be merged in ANY stage.
+
+**Warning signs:**
+- LLM consolidation proposing to merge profiles that already have 10+ aliases
+- merge_audit.json (when implemented) showing a merge chain longer than 3 steps
+- The LLM reasoning field mentioning aliases that came from a prior incorrect merge
+
+**Phase to address:**
+Phase 1 (merger hardening). Co-occurrence guard must be extended to all stages, not just the LLM stage.
 
 ---
 
@@ -164,80 +198,86 @@ Phase 2 or 3 (synthesis integration). This is primarily a plumbing task, not an 
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
 |----------|-------------------|----------------|-----------------|
-| Keep both `voice_qualities` AND `voice_profile` fields forever | Zero migration risk | Dual source of truth, confusion about which to use, LLM schema bloat | Acceptable for v1.2, but deprecate old fields with warnings by v1.3 |
-| Hardcode emotion-to-audio parameter maps | Quick implementation, easy to tune | Every new emotion or speech-act requires code changes, combinatorial explosion | Acceptable for v1.2 (8 emotions x 4 speech-acts = 32 combinations is manageable) |
-| Skip emotion data for narration segments | Simpler implementation (only dialogue gets emotion) | Narration conveys mood too; monotone narration in emotional scenes | Never -- narration is >50% of segments and scene mood applies to all segments |
-| Use `emotion.json` as separate file forever | No schema changes to `attributed.json` | Two files to keep in sync, easy to have stale emotion data | Acceptable for v1.2 but consider embedding emotion in attributed.json for v1.3 |
+| Add cross-name exclusion only to substring stage, not fuzzy | Faster implementation, fewer code changes | Fuzzy stage can still produce false positives that cascade | Never -- apply to ALL merge stages or the guard is incomplete |
+| Hardcode trait count cap at 30 without configurability | Quick fix for the immediate problem | Different books have different optimal caps; literary fiction with complex characters may need 40+ | Acceptable for v1.3 with a TODO to make configurable |
+| Implement distinctiveness pass as a simple trait-swap without LLM | No LLM call overhead, deterministic results | Rule-based swaps cannot reason about character coherence; produces absurd combinations | Never for production -- use LLM with character context |
+| Store merge_audit.json only in debug mode | No disk overhead in normal runs | Merge issues in production runs are undiagnosable without the audit trail | Acceptable for v1.3 if the audit is opt-in via `--merge-audit` flag, but strongly recommend making it default since the file is small |
+| Skip expressive clip scoring for speakers with only 1 clip cached | Avoids scoring edge cases when there is no alternative | Misses the opportunity to flag that the sole available clip is a poor match for the character | Acceptable -- log a warning when only 1 clip is available so the user knows selection was constrained |
 
 ## Integration Gotchas
 
 | Integration | Common Mistake | Correct Approach |
 |-------------|----------------|------------------|
-| voice_profile in LLM extraction | Changing the LLM output schema to produce `voice_profile` directly | Keep LLM producing `voice_qualities` + `voice_baseline` separately, merge in Python post-processing. LLMs produce better structured output with focused schemas. |
-| Emotion data in synthesis | Loading emotion.json once at start, assuming segment IDs match | Segment IDs in emotion.json reference scene ranges, not individual segments. Build a proper `get_mood_for_segment(seg_id, emotion_data)` lookup that handles scene boundaries. |
-| voice_profile in voice matching | Passing `voice_profile.description` as the sole input to trait matching | Use both structured fields (pitch, pace, tone, accent, energy) AND the free-text description. Structured fields give the LLM concrete comparison points; description gives context. |
-| Checkpoint compatibility | Assuming existing checkpoints work after adding emotion conditioning | Checkpoints record per-segment completion but not which features were active. A segment synthesized without emotion conditioning should be re-synthesized when emotion is enabled. Add a features hash to checkpoint metadata. |
+| Cross-name exclusion + alias_overlap() | Building the exclusion set once and not updating it after merges | Rebuild the protected name set before EACH merge stage. After stage 1 merges "Mr. Darcy" with "Darcy", the protected set changes. |
+| Opinionated extraction + cache | Using the same cache key prefix for conservative and opinionated extraction | Include the extraction mode in the cache key: `extraction_v2` vs `extraction_v2_opinionated`. Otherwise `--opinionated` returns cached conservative results. |
+| Distinctiveness pass + voice matching | Running distinctiveness pass on profiles that have already been matched to speakers | Distinctiveness must run BEFORE voice matching. If you push profiles apart after matching, the matched voice no longer fits. Pipeline order: extract -> merge -> opinionated -> distinctiveness -> match -> synthesize. |
+| voice_overrides.yaml + trait matcher cache | Applying overrides before matching but the trait matcher cache key does not include override data | Include override hash in the trait matcher cache key, or invalidate the cache when overrides change. Otherwise matching uses stale cached results that ignore overrides. |
+| Expressive clip scoring + audio_downloader | Scoring clips that have not been downloaded yet | Clip scoring runs AFTER download_voice_clips(). The scorer needs actual WAV files on disk to compute pitch/energy/rate. Ensure the download step is called first. |
+| Co-occurrence guard + unnamed characters | Applying co-occurrence guard to unnamed characters ("the servant") that appear in many chapters | Co-occurrence guard already skips unnamed characters (line 429: `if not profile_a.is_named or not profile_b.is_named: return False`). Do NOT change this -- unnamed characters legitimately appear across chapters and should still be mergeable. |
 
 ## Performance Traps
 
 | Trap | Symptoms | Prevention | When It Breaks |
 |------|----------|------------|----------------|
-| Loading emotion.json per segment instead of once | Synthesis slows down linearly with book size | Load once into a dict at synthesis start, O(1) lookup per segment | Immediate (file I/O per segment adds ~10ms x 2000 segments = 20s overhead) |
-| Recomputing voice_profile merge on every access | Wasted CPU on hot path | Cache the merged profile at CharacterProfile construction time | At scale with large casts (50+ characters) |
-| Emotion parameter resolution involving LLM calls | Each segment takes 2-5s extra for LLM roundtrip | All emotion-to-audio mappings must be deterministic lookups, never LLM calls | Immediate (would make synthesis 10x slower) |
-| Re-synthesizing all segments when enabling emotion | Hours of wasted synthesis time | Checkpoint tracks which features were active; only re-synth segments where emotion would actually change output (non-neutral mood or has line override) | Books with >1000 segments |
+| Computing pitch/energy/rate variance for every WAV in a speaker's directory | Clip selection takes 10+ seconds per speaker when speakers have 50+ clips | Compute features once and cache in a sidecar JSON file per speaker directory. On subsequent runs, load cached features. | Immediate for speakers with many clips (some LibriTTS speakers have 100+ utterances) |
+| O(n^2) pairwise comparison in distinctiveness pass | Distinctiveness pass takes minutes for books with 40+ characters | Use the distinctiveness pass only on character PAIRS that are already similar (cosine similarity of profiles above threshold). Skip pairs that are already distinct. | Books with 40+ speaking characters (epic fantasy, ensemble novels) |
+| Rebuilding co-occurrence map in every merge stage | Redundant computation of chapter->character mappings | Build co-occurrence map ONCE from the original chapter_characters input, pass it as a parameter to each stage. The map does not change -- only the profiles change. | Not severe but wastes time on books with 60+ chapters |
+| Expressive clip scoring loading full WAV audio into memory | Memory spikes when scoring clips for 20+ speakers simultaneously | Process one speaker at a time, release WAV data after computing features. Do not hold all speaker audio in memory simultaneously. | M4 Mac with 16GB -- WAV files for 20 speakers at 12.5s each = ~24MB (manageable, but be defensive) |
 
 ## UX Pitfalls
 
 | Pitfall | User Impact | Better Approach |
 |---------|-------------|-----------------|
-| No way to preview emotion effect on a single segment | User must re-synthesize entire book to hear if emotion tuning sounds good | Add `--preview-segment N` flag that synthesizes one segment with and without emotion conditioning for A/B comparison |
-| Emotion conditioning enabled by default immediately | Existing books that sounded fine now sound different on re-synthesis | Default emotion conditioning OFF, require explicit `--expression` flag. Let users opt in. |
-| No indication of which segments have emotion overrides | User cannot find the emotion-affected segments in output | Log segment IDs that received non-neutral mood or line overrides during synthesis, print count in summary |
-| voice_profile merge changes matching for existing books | Re-running match phase assigns different voices to characters | voice_map.json is only generated if it does not exist (current behavior). Do not auto-regenerate on re-run. |
+| No merge audit output by default | User cannot understand why characters were incorrectly merged without adding debug flags and re-running | Always write merge_audit.json. It is small (<100KB) and critical for diagnosing merge issues. Make it opt-OUT not opt-IN. |
+| Opinionated mode changes existing cached profiles silently | User runs with `--opinionated`, gets new profiles, then runs without it and gets old cached profiles -- confusing inconsistency | Clear extraction cache when switching between opinionated and conservative modes, or use separate cache directories per mode |
+| No diff output when overrides are applied | User writes voice_overrides.yaml but cannot see what changed vs. the extracted profile | Print a before/after diff for each override: "Mr. Darcy: pitch medium->low, tone warm->cold" |
+| Expressive clip selection picks different clips than previous runs | Re-running the pipeline selects different reference clips, making voice consistency verification fail (Resemblyzer detects "drift" that is actually a different reference clip) | Pin clip selection results in voice_map.json. Only re-select clips if explicitly requested via `--reselect-clips` flag or if voice_map.json does not exist. |
 
 ## "Looks Done But Isn't" Checklist
 
-- [ ] **voice_profile merge:** VoiceQualities and VoiceBaseline still work when loaded from old characters.json -- verify with actual v1.1 output files
-- [ ] **Emotion wiring:** emotion.json data actually reaches the synthesis loop (not just loaded but used) -- add integration test that checks log output for mood data
-- [ ] **Speech-act + emotion interaction:** All 32 combinations (8 emotions x 4 speech-acts) produce listenable audio -- spot-check at least the 4 extreme cases (whispered+anger, shouted+fear, thought+joy, spoken+neutral)
-- [ ] **Checkpoint compat:** A v1.1 checkpoint.json loads and resumes correctly with v1.2 code -- test with actual checkpoint file
-- [ ] **Voice matching stability:** Running match phase with new voice_profile produces same or better assignments as old format -- A/B test on at least 1 book
-- [ ] **Missing emotion.json:** Synthesis completes without crash when emotion.json does not exist (v1.0/v1.1 books)
-- [ ] **Narrator emotion:** Scene mood is applied to narration segments, not just dialogue -- verify narrator segments get mood data
+- [ ] **Cross-name exclusion:** Test with Pride and Prejudice cast -- "Bennet" should not merge Mrs. Bennet, Mr. Bennet, Elizabeth Bennet, Jane Bennet, Lydia Bennet, Mary Bennet, or Kitty Bennet into one profile
+- [ ] **Co-occurrence guard on all stages:** Verify that fuzzy merge and substring merge check co-occurrence, not just LLM consolidation
+- [ ] **Trait count cap:** After merging a 61-chapter novel, no profile has more than 30 personality_traits
+- [ ] **Opinionated cache isolation:** Run conservative extraction, then opinionated extraction on the same book -- profiles should differ. Run conservative again -- should get the original cached results, not the opinionated ones.
+- [ ] **Distinctiveness coherence:** After distinctiveness pass, each profile's voice_profile.description still matches its individual trait fields (pitch, pace, tone)
+- [ ] **voice_overrides.yaml validation:** A YAML file with invalid field names (`loudness: "high"`) produces a clear error, not a silent pass-through
+- [ ] **Expressive clip scoring with character context:** A character with `pace: "slow"` gets a different clip than a character with `pace: "fast"` from the same speaker (if multiple clips exist)
+- [ ] **Merge diagnostics:** merge_audit.json records every merge decision with before/after profile snapshots and the merge stage that triggered it
 
 ## Recovery Strategies
 
 | Pitfall | Recovery Cost | Recovery Steps |
 |---------|---------------|----------------|
-| Style descriptions silently ignored by Base model | LOW | Remove the instruct code path, redirect effort to post-processing. No data loss, just wasted implementation time. |
-| characters.json schema break | MEDIUM | Write a migration script that reads old format, adds voice_profile field, writes new format. Apply to all existing book directories. Test with `model_validate()`. |
-| Stacked speech-act + emotion adjustments produce bad audio | LOW | Revert to speech-act-only adjustments (v1.1 behavior), redesign the priority model, re-implement. Only affects the post-processing code, not data. |
-| Voice matching quality regression | MEDIUM | Revert `_build_character_description()` to old format, delete voice_map.json for affected books, re-run matching. Synthesis must be re-run for reassigned characters. |
-| Emotion data never reaching synthesis | LOW | Pure plumbing fix. Add data loading and lookup in run_synthesis(), no algorithm changes needed. |
-| Checkpoint incompatibility after feature change | HIGH | Must re-synthesize from scratch. Archive old wavs/ and checkpoint.json, start fresh. Hours of synthesis time lost per book. |
+| Cascading merge contamination | MEDIUM | Delete characters.json, clear extraction cache, re-run attribution phase. Merges happen during attribution, so re-extraction + re-merge from clean state fixes it. |
+| Substring false positives | LOW | Fix MIN_SUBSTRING_LENGTH and add word-boundary check. Re-run merge only (extraction cache can be reused). Delete characters.json and re-run attribution. |
+| Generic opinionated profiles | LOW | Iterate on the opinionated extraction prompt. Clear the opinionated cache entries. Re-run extraction. No downstream impact until matching/synthesis run. |
+| Contradictory distinctiveness results | LOW | Revert profiles to pre-distinctiveness state (the pass should save a backup). Adjust distinctiveness constraints and re-run the pass only. |
+| Expressive clips mismatched to characters | LOW | Delete voice_map.json clip_path entries, re-run clip selection with corrected scoring. Re-run synthesis for affected characters. |
+| voice_overrides.yaml silently ignored | LOW | Add logging, verify pipeline application order. No data loss -- overrides are additive. Fix the load order and re-run matching + synthesis. |
+| LLM consolidation on contaminated profiles | MEDIUM | Must fix upstream stages first (fuzzy, substring), then clear consolidation cache, then re-run full merge pipeline. Cannot fix consolidation in isolation. |
 
 ## Pitfall-to-Phase Mapping
 
 | Pitfall | Prevention Phase | Verification |
 |---------|------------------|--------------|
-| Base model cannot accept style instructions | Phase 1 (Design) | Architecture document explicitly states post-processing-only approach; no instruct parameter in engine API |
-| Data model merge breaks artifacts | Phase 1 (Data Model) | Load a v1.1 characters.json with v1.2 code; all fields validate; voice_profile computed correctly |
-| Speech-act + emotion conflict | Phase 2 (Emotion Integration) | Parameter resolution function returns single AdjustmentParams; edge-case audio samples reviewed |
-| Voice matching quality regression | Phase 2 (Matching Enhancement) | A/B comparison of matching results with old vs new input format on test book |
-| Emotion data not reaching synthesis | Phase 2 or 3 (Synthesis Wiring) | Log output confirms mood data loaded and applied; integration test verifies data flow |
-| Checkpoint incompatibility | Phase 1 (Data Model) | Resume synthesis on a v1.1 book directory with v1.2 code; no crash, correct behavior |
+| Cascading merge contamination | Phase 1 (Merger Hardening) | merge_audit.json shows no profile with >30 traits or aliases containing other profiles' canonical names |
+| Substring false positives | Phase 1 (Merger Hardening) | Pride and Prejudice test: all 5 Bennet sisters remain separate profiles after full merge pipeline |
+| Generic opinionated profiles | Phase 2 (Opinionated Profiles) | Run `--opinionated` on test book: <10% of voice_profile fields remain "unknown" (vs. ~60% in conservative mode) |
+| Contradictory distinctiveness | Phase 2 (Opinionated Profiles) | Manual review of 5 character profiles after distinctiveness pass -- all traits coherent with description |
+| Expressive clip mismatch | Phase 3 (Expressive Clips) | Character with `pace: "slow"` assigned clip with lower speaking rate than character with `pace: "fast"` |
+| voice_overrides.yaml ignored | Phase 2 (Opinionated Profiles) | Apply override `pitch: "low"` to character with `pitch: "high"` -- voice_map.json reflects changed matching |
+| LLM consolidation contamination | Phase 1 (Merger Hardening) | Co-occurrence guard logs show blocks in fuzzy and substring stages, not just LLM stage |
+| Cache pollution across modes | Phase 2 (Opinionated Profiles) | Toggle between `--opinionated` and default three times -- each run produces consistent, mode-appropriate results |
 
 ## Sources
 
-- Qwen3-TTS Base model card: [Hugging Face](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-Base)
-- Qwen3-TTS GitHub repository: [QwenLM/Qwen3-TTS](https://github.com/QwenLM/Qwen3-TTS)
-- mlx-audio installed source code: `.venv/lib/python3.11/site-packages/mlx_audio/tts/models/qwen3_tts/qwen3_tts.py` (lines 687-812) -- verified Base model `generate()` routing and `_generate_icl()` parameter list
-- Existing codebase: `src/attribution/models.py`, `src/synthesis/synthesizer.py`, `src/synthesis/qwen_engine.py`, `src/synthesis/post_processor.py`, `src/matching/trait_matcher.py`
-- FlexiVoice paper on Style-Timbre-Content conflict: [arxiv.org/html/2601.04656v1](https://arxiv.org/html/2601.04656v1)
-- Pydantic backward compatibility patterns: [roman.pt/posts/pydantic-as-backward-compatibility-layer](https://roman.pt/posts/pydantic-as-backward-compatibility-layer/)
-- F5-TTS-Emotional-CFG research on emotion conditioning conflicts: [GitHub](https://github.com/RaduBolbo/F5-TTS-Emotional-CFG)
+- Actual codebase: `src/attribution/merger.py` -- full merge pipeline with 4 stages, `_merge_two_profiles()` blind union on lines 250-315, `_names_match_substring()` on lines 33-57, `_build_cooccurrence()` on lines 386-412
+- Actual codebase: `src/attribution/extractor.py` -- `EXTRACTION_SYSTEM_PROMPT` on lines 43-87, cache key generation on line 259
+- Actual codebase: `src/matching/clip_selector.py` -- duration-only scoring on lines 72-73, no character-profile awareness
+- Actual codebase: `src/matching/trait_matcher.py` -- `_build_character_description()` on lines 102-142, cache key including available candidates on lines 193-199
+- Actual codebase: `src/attribution/models.py` -- VoiceProfile schema (9 string fields), CharacterProfile schema with personality_traits as unbounded list
+- PROJECT.md known root cause: "_merge_two_profiles() in merger.py blindly unions ALL aliases and ALL personality traits"
 
 ---
-*Pitfalls research for: v1.2 Voice Expression milestone*
-*Researched: 2026-03-06*
+*Pitfalls research for: v1.3 Voice Quality milestone*
+*Researched: 2026-03-09*
