@@ -1,33 +1,34 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.2
-milestone_name: Voice Expression
-status: archived
-stopped_at: Milestone v1.2 archived
-last_updated: "2026-03-07"
-last_activity: 2026-03-07 -- Milestone v1.2 archived
+milestone: v1.3
+milestone_name: Voice Quality
+status: active
+stopped_at: Defining requirements
+last_updated: "2026-03-09"
+last_activity: 2026-03-09 -- Milestone v1.3 started
 progress:
-  total_phases: 3
-  completed_phases: 3
-  total_plans: 6
-  completed_plans: 6
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-07)
+See: .planning/PROJECT.md (updated 2026-03-09)
 
 **Core value:** Feed in an EPUB, get out a multi-voice audiobook where each character has a distinct, fitting voice cloned from a real human recording.
-**Current focus:** Planning next milestone
+**Current focus:** v1.3 Voice Quality — Fix merger pipeline + opinionated profiles
 
 ## Current Position
 
-Phase: N/A -- between milestones
-Status: v1.2 Voice Expression shipped, planning next milestone
-Last activity: 2026-03-07 -- Milestone v1.2 archived
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-03-09 — Milestone v1.3 started
 
 ## Performance Metrics
 
@@ -68,6 +69,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-07
-Stopped at: Milestone v1.2 archived
-Resume file: N/A -- use /gsd:new-milestone to start next milestone
+Last session: 2026-03-09
+Stopped at: Defining requirements for v1.3
+Resume file: N/A

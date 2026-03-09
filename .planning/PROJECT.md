@@ -8,9 +8,15 @@ A local Python app that converts EPUB files into multi-voice audiobooks (.mp3). 
 
 Feed in an EPUB, get out a multi-voice audiobook where each character has a distinct, fitting voice cloned from a real human recording.
 
-## Current State
+## Current Milestone: v1.3 Voice Quality
 
-Shipped v1.2. All three milestones complete. No active milestone.
+**Goal:** Fix character profile merger to eliminate cross-contamination, then add opinionated voice profiles and expressive reference clip selection for more distinct character voices.
+
+**Target features:**
+- Clean character profile merging with cross-name exclusion and merge diagnostics
+- Opinionated voice profile extraction that pushes characters apart
+- Expressive reference clip scoring (pitch/energy/rate variance, not just SNR)
+- Voice overrides for manual per-character tuning
 
 ## Requirements
 
@@ -51,7 +57,18 @@ Shipped v1.2. All three milestones complete. No active milestone.
 
 ### Active
 
-None — planning next milestone.
+- [ ] Merge diagnostics with per-stage logging and merge_audit.json output
+- [ ] Post-merge validation flagging cross-contaminated profiles
+- [ ] Cross-name exclusion preventing aliases matching other characters' canonical names
+- [ ] Co-occurrence guard on all merge stages
+- [ ] Trait count cap (30) with overflow handling
+- [ ] Surname-only exclusion hardening for different title/first-name profiles
+- [ ] Extraction prompt hardening with negative examples
+- [ ] Opinionated voice profile extraction (--opinionated flag)
+- [ ] Post-extraction distinctiveness pass pushing similar voices apart
+- [ ] Voice overrides via voice_overrides.yaml
+- [ ] Expressive reference clip scoring (SNR + pitch/energy/rate variance)
+- [ ] Rate-match reference clips to character profile pace
 
 ### Future
 
@@ -126,4 +143,4 @@ Hardware: M4 Mac with 16GB unified memory. LLM and TTS run in separate phases wi
 | _process_segment extraction | Shared helper eliminates ~150 lines of duplicated retry/checkpoint logic | ✓ Good — cleaner code |
 
 ---
-*Last updated: 2026-03-07 after v1.2 milestone*
+*Last updated: 2026-03-09 after v1.3 milestone start*
