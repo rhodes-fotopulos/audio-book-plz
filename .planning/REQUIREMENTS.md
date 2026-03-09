@@ -9,14 +9,14 @@ Requirements for Voice Quality milestone. Each maps to roadmap phases.
 
 ### Merger Hardening
 
-- [ ] **MERGE-01**: Per-stage logging of every merge decision (which profiles, why, accepted/rejected)
+- [x] **MERGE-01**: Per-stage logging of every merge decision (which profiles, why, accepted/rejected)
 - [ ] **MERGE-02**: Post-merge validation flags profiles with >5 aliases, >50 traits, or aliases matching other characters' canonical names
-- [ ] **MERGE-03**: Write merge_audit.json alongside characters.json for debugging
+- [x] **MERGE-03**: Write merge_audit.json alongside characters.json for debugging
 - [ ] **MERGE-04**: Cross-name exclusion — before adding an alias, check it against canonical names of all other profiles
 - [ ] **MERGE-05**: Co-occurrence guard on all merge stages (not just stage 4) — reject merge if both characters appear in same chapter
 - [ ] **MERGE-06**: Trait count cap at 30 — if exceeded after merge, keep only primary profile's traits
 - [ ] **MERGE-07**: Surname-only exclusion — block merges where shared token is a surname but profiles have different titles/first-names
-- [ ] **MERGE-08**: Extraction prompt hardening with explicit negative examples ("WRONG: Mrs. Bennet aliases=[Elizabeth, Jane]")
+- [x] **MERGE-08**: Extraction prompt hardening with explicit negative examples ("WRONG: Mrs. Bennet aliases=[Elizabeth, Jane]")
 
 ### Opinionated Voice Profiles
 
@@ -50,14 +50,14 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| MERGE-01 | Phase 14 | Pending |
+| MERGE-01 | Phase 14 | Complete |
 | MERGE-02 | Phase 14 | Pending |
-| MERGE-03 | Phase 14 | Pending |
+| MERGE-03 | Phase 14 | Complete |
 | MERGE-04 | Phase 14 | Pending |
 | MERGE-05 | Phase 14 | Pending |
 | MERGE-06 | Phase 14 | Pending |
 | MERGE-07 | Phase 14 | Pending |
-| MERGE-08 | Phase 14 | Pending |
+| MERGE-08 | Phase 14 | Complete |
 | PROF-01 | Phase 15 | Pending |
 | PROF-02 | Phase 15 | Pending |
 | PROF-03 | Phase 15 | Pending |
