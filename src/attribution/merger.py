@@ -1,33 +1,101 @@
 """Character profile merger — alias detection and deduplication.
 
 Merges per-chapter character lists into a single deduplicated registry.
-Uses a multi-stage merge strategy:
-  1. Exact name match
-  2. Fuzzy name match (SequenceMatcher + title/name matching)
-  3. Alias/substring match (with surname-only exclusion)
-  4. LLM consolidation with co-occurrence guard
+Uses a 4-stage merge pipeline:
+  1. Exact name match (always correct, records audit decisions)
+  2. Candidate pair generation (fuzzy + substring + alias — no auto-merge)
+  3. LLM merge arbiter (accepts/rejects candidates with confidence)
+  4. Post-merge validation (flags anomalies, warn-and-continue)
 
-Requirements covered: ATTR-02
+Requirements covered: ATTR-02, MERGE-01 through MERGE-07
 """
 
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from pathlib import Path
 
+from pydantic import BaseModel
+
 from src.attribution.cache import check_cache, get_cache_key, write_cache
 from src.attribution.llm_client import call_llm_structured
-from src.attribution.models import CharacterProfile, ConsolidationResult, VoiceProfile
+from src.attribution.models import (
+    CharacterProfile,
+    MergeAudit,
+    MergeDecision,
+    VoiceProfile,
+)
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Name matching helpers
+# Constants
 # ---------------------------------------------------------------------------
 
 MIN_SUBSTRING_LENGTH = 3
 """Minimum length for a name to be considered in substring matching."""
+
+TRAIT_CAP = 30
+"""Maximum personality traits per profile after merge (MERGE-06)."""
+
+LLM_CONFIDENCE_THRESHOLD = 0.7
+"""Minimum LLM confidence to accept a merge (below = skip)."""
+
+TITLES = {"mr", "mrs", "miss", "ms", "dr", "sir", "lady", "lord", "captain", "colonel"}
+"""Common title prefixes for title/name matching."""
+
+
+# ---------------------------------------------------------------------------
+# LLM arbiter response models
+# ---------------------------------------------------------------------------
+
+
+class MergeArbiterDecision(BaseModel):
+    """A single merge decision from the LLM arbiter."""
+    pair_index: int
+    decision: str  # "merge" or "reject"
+    confidence: float
+    reasoning: str
+
+
+class MergeArbiterResult(BaseModel):
+    """LLM response for batch merge arbitration."""
+    decisions: list[MergeArbiterDecision]
+
+
+# ---------------------------------------------------------------------------
+# LLM arbiter prompt
+# ---------------------------------------------------------------------------
+
+MERGE_ARBITER_PROMPT = """\
+You are a character identity specialist for novels. For each candidate pair, \
+determine if they are the SAME person or DIFFERENT people.
+
+Rules:
+- Default to DIFFERENT unless you are confident they are the same person.
+- Nicknames and formal names of the same person should be merged \
+  (e.g. "Lizzy" and "Elizabeth Bennet" are the same person).
+- Characters who share a surname are usually DIFFERENT people \
+  (e.g. "Mr. Bennet" and "Elizabeth Bennet" are father and daughter).
+- Titles change but the person doesn't: "Miss Darcy" and "Georgiana Darcy" \
+  are the same person.
+- "Mr. Bennet" and "Mrs. Bennet" are ALWAYS different (husband and wife).
+- Spelling variants of the same name ARE the same person \
+  (e.g. "Mrs. Phillips" and "Mrs. Philips").
+- Co-occurrence in the same chapter does NOT automatically mean different people. \
+  Name variants of the same person often appear in the same chapter.
+
+For each pair, return:
+- decision: "merge" or "reject"
+- confidence: 0.0-1.0 (how sure you are)
+- reasoning: brief explanation"""
+
+
+# ---------------------------------------------------------------------------
+# Name matching helpers
+# ---------------------------------------------------------------------------
 
 
 def _names_match_substring(name_a: str, name_b: str) -> bool:
@@ -35,13 +103,6 @@ def _names_match_substring(name_a: str, name_b: str) -> bool:
 
     Requires the shorter name to be at least MIN_SUBSTRING_LENGTH characters
     to avoid matching trivial strings like "I" or "Mr".
-
-    Args:
-        name_a: First name to compare.
-        name_b: Second name to compare.
-
-    Returns:
-        True if one name contains the other.
     """
     a_lower = name_a.lower().strip()
     b_lower = name_b.lower().strip()
@@ -63,13 +124,6 @@ def _names_share_surname_only(name_a: str, name_b: str) -> bool:
     Used to PREVENT merging: "Mr. Bennet" and "Mrs. Bennet" share a surname
     but are different characters. "Mr. Darcy" and "Darcy" are the same person
     (one is just the surname, no conflicting given name).
-
-    Args:
-        name_a: First name to compare.
-        name_b: Second name to compare.
-
-    Returns:
-        True if names share surname but have different given names/titles.
     """
     parts_a = name_a.strip().split()
     parts_b = name_b.strip().split()
@@ -95,13 +149,6 @@ def _alias_overlap(profile_a: CharacterProfile, profile_b: CharacterProfile) -> 
     """Check if any alias of A matches name or alias of B (or vice versa).
 
     Case-insensitive comparison.
-
-    Args:
-        profile_a: First character profile.
-        profile_b: Second character profile.
-
-    Returns:
-        True if there is any alias overlap between the two profiles.
     """
     a_names = {profile_a.name.lower().strip()}
     a_names.update(alias.lower().strip() for alias in profile_a.aliases)
@@ -116,22 +163,11 @@ def _alias_overlap(profile_a: CharacterProfile, profile_b: CharacterProfile) -> 
 # Fuzzy matching helpers
 # ---------------------------------------------------------------------------
 
-TITLES = {"mr", "mrs", "miss", "ms", "dr", "sir", "lady", "lord", "captain", "colonel"}
-"""Common title prefixes for title/name matching."""
-
 
 def _names_match_fuzzy(name_a: str, name_b: str, threshold: float = 0.85) -> bool:
     """Check if two names are fuzzy matches using SequenceMatcher.
 
     Uses a higher threshold for short names to avoid false positives.
-
-    Args:
-        name_a: First name.
-        name_b: Second name.
-        threshold: Minimum similarity ratio (default 0.85).
-
-    Returns:
-        True if names are sufficiently similar.
     """
     a = name_a.lower().strip()
     b = name_b.lower().strip()
@@ -150,13 +186,6 @@ def _title_name_match(name_a: str, name_b: str) -> bool:
 
     Merges "Miss Darcy" with "Georgiana Darcy" but prevents
     "Mr. Bennet" / "Mrs. Bennet" merge.
-
-    Args:
-        name_a: First name.
-        name_b: Second name.
-
-    Returns:
-        True if names match via title/first-name equivalence.
     """
     parts_a = name_a.strip().split()
     parts_b = name_b.strip().split()
@@ -187,59 +216,32 @@ def _title_name_match(name_a: str, name_b: str) -> bool:
     return False
 
 
-def _merge_by_fuzzy(profiles: list[CharacterProfile]) -> list[CharacterProfile]:
-    """Merge profiles by fuzzy name matching and title/name equivalence.
+# ---------------------------------------------------------------------------
+# Audit trail helper
+# ---------------------------------------------------------------------------
 
-    Skips merges where names share only a surname (likely different characters).
-    """
-    merged_indices: set[int] = set()
-    result: list[CharacterProfile] = []
 
-    for i in range(len(profiles)):
-        if i in merged_indices:
-            continue
-
-        current = profiles[i]
-
-        for j in range(i + 1, len(profiles)):
-            if j in merged_indices:
-                continue
-
-            candidate = profiles[j]
-
-            # Check for surname-only match (PREVENT merge)
-            if _names_share_surname_only(current.name, candidate.name):
-                continue
-
-            # Check fuzzy match on canonical names
-            should_merge = _names_match_fuzzy(current.name, candidate.name)
-
-            # Check fuzzy match on aliases
-            if not should_merge:
-                all_a = [current.name] + list(current.aliases)
-                all_b = [candidate.name] + list(candidate.aliases)
-                for na in all_a:
-                    for nb in all_b:
-                        if _names_match_fuzzy(na, nb) or _title_name_match(na, nb):
-                            should_merge = True
-                            break
-                    if should_merge:
-                        break
-
-            # Check title/name match on canonical names
-            if not should_merge:
-                should_merge = _title_name_match(current.name, candidate.name)
-
-            if should_merge:
-                current = _merge_two_profiles(current, candidate)
-                merged_indices.add(j)
-                logger.debug(
-                    "Fuzzy-merged '%s' into '%s'", candidate.name, current.name
-                )
-
-        result.append(current)
-
-    return result
+def _record_decision(
+    audit: MergeAudit,
+    stage: str,
+    profile_a_name: str,
+    profile_b_name: str,
+    action: str,
+    reason: str,
+    confidence: float,
+    details: dict | None = None,
+) -> None:
+    """Record a merge decision in the audit trail."""
+    decision = MergeDecision(
+        stage=stage,
+        profile_a=profile_a_name,
+        profile_b=profile_b_name,
+        action=action,
+        reason=reason,
+        confidence=confidence,
+        details=details or {},
+    )
+    audit.stages.setdefault(stage, []).append(decision)
 
 
 # ---------------------------------------------------------------------------
@@ -248,20 +250,33 @@ def _merge_by_fuzzy(profiles: list[CharacterProfile]) -> list[CharacterProfile]:
 
 
 def _merge_two_profiles(
-    primary: CharacterProfile, secondary: CharacterProfile
+    primary: CharacterProfile,
+    secondary: CharacterProfile,
+    all_canonical_names: set[str] | None = None,
+    audit: MergeAudit | None = None,
 ) -> CharacterProfile:
     """Merge two profiles determined to be the same character.
 
     The primary profile is preferred for most fields, but the longer/more
     formal name is chosen as canonical. All aliases and traits are unioned.
 
+    MERGE-04: Cross-name exclusion — aliases matching another profile's
+    canonical name are blocked.
+    MERGE-06: Trait cap — traits capped at TRAIT_CAP after merge.
+
     Args:
         primary: The profile to prefer for name/description.
         secondary: The profile to merge into primary.
+        all_canonical_names: Set of lowercase canonical names of all profiles.
+            Used for cross-name exclusion (MERGE-04).
+        audit: Optional audit trail for logging blocked aliases.
 
     Returns:
         A new merged CharacterProfile.
     """
+    if all_canonical_names is None:
+        all_canonical_names = set()
+
     # Choose the longer/more formal name as canonical
     if len(secondary.name) > len(primary.name):
         canonical_name = secondary.name
@@ -280,6 +295,29 @@ def _merge_two_profiles(
     # Remove empty strings
     all_aliases.discard("")
 
+    # MERGE-04: Cross-name exclusion — block aliases that match another
+    # profile's canonical name (case-insensitive)
+    blocked_aliases: set[str] = set()
+    for alias in all_aliases:
+        alias_lower = alias.lower().strip()
+        # Check against all canonical names EXCEPT this profile's own canonical
+        if alias_lower in all_canonical_names and alias_lower != canonical_name.lower().strip():
+            blocked_aliases.add(alias)
+            logger.warning(
+                "Cross-name exclusion: blocked alias '%s' on profile '%s' "
+                "(matches canonical name of another profile)",
+                alias, canonical_name,
+            )
+            if audit is not None:
+                _record_decision(
+                    audit, "cross_name_exclusion",
+                    canonical_name, alias,
+                    action="rejected",
+                    reason=f"Alias '{alias}' matches canonical name of another profile",
+                    confidence=1.0,
+                )
+    all_aliases -= blocked_aliases
+
     # Merge voice profiles: prefer non-"unknown" values
     merged_vp = _merge_voice_profiles(primary.voice_profile, secondary.voice_profile)
 
@@ -287,6 +325,21 @@ def _merge_two_profiles(
     all_traits: list[str] = list(dict.fromkeys(
         primary.personality_traits + secondary.personality_traits
     ))
+
+    # MERGE-06: Trait cap
+    if len(all_traits) > TRAIT_CAP:
+        overflow_count = len(all_traits) - TRAIT_CAP
+        logger.warning(
+            "Trait overflow for '%s': %d traits exceed cap of %d, "
+            "discarding %d overflow traits",
+            canonical_name, len(all_traits), TRAIT_CAP, overflow_count,
+        )
+        if audit is not None:
+            audit.warnings.append(
+                f"Trait overflow for '{canonical_name}': {len(all_traits)} traits "
+                f"exceed cap of {TRAIT_CAP}, discarded {overflow_count}"
+            )
+        all_traits = all_traits[:TRAIT_CAP]
 
     # Prefer is_named=True if either has it
     is_named = primary.is_named or secondary.is_named
@@ -319,18 +372,7 @@ def _merge_voice_profiles(
     vp_a: VoiceProfile,
     vp_b: VoiceProfile,
 ) -> VoiceProfile:
-    """Merge two VoiceProfiles, preferring non-unknown values.
-
-    When both have non-unknown values, prefer the profile with the
-    longer description (more textual evidence).
-
-    Args:
-        vp_a: Voice profile from profile A.
-        vp_b: Voice profile from profile B.
-
-    Returns:
-        Merged VoiceProfile.
-    """
+    """Merge two VoiceProfiles, preferring non-unknown values."""
     prefer_a = len(vp_a.description) >= len(vp_b.description)
 
     def pick(val_a: str, val_b: str) -> str:
@@ -342,7 +384,6 @@ def _merge_voice_profiles(
             return val_a if prefer_a else val_b
         return "unknown"
 
-    # Description: take the longer one directly
     desc = vp_a.description if len(vp_a.description) >= len(vp_b.description) else vp_b.description
 
     return VoiceProfile(
@@ -359,28 +400,8 @@ def _merge_voice_profiles(
 
 
 # ---------------------------------------------------------------------------
-# LLM consolidation
+# Co-occurrence helpers
 # ---------------------------------------------------------------------------
-
-CONSOLIDATION_SYSTEM_PROMPT = """\
-You are a character deduplication specialist. Given a numbered list of \
-character profiles extracted from a novel, identify ONLY characters you \
-are CERTAIN are the same person.
-
-Rules:
-- If unsure, do NOT group — it is better to keep duplicates than to \
-wrongly merge distinct characters.
-- Characters who share a surname are often DIFFERENT people \
-(e.g. the Bennet sisters are 5 distinct characters: Jane, Elizabeth, \
-Mary, Kitty/Catherine, and Lydia).
-- "Mr. Bennet" and "Mrs. Bennet" are DIFFERENT characters (husband and wife).
-- Spelling variants of the same name ARE duplicates \
-(e.g. "Mrs. Phillips" and "Mrs. Philips").
-- A descriptor like "the middle Bennet daughter" that refers to a named \
-character IS a duplicate of that named character.
-- Return an empty groups list if no clear duplicates exist.
-- For each group, set canonical_index to the profile with the most \
-complete information."""
 
 
 def _build_cooccurrence(
@@ -406,30 +427,20 @@ def _build_cooccurrence(
                 alias_key = alias.lower().strip()
                 if alias_key:
                     name_to_chapters.setdefault(alias_key, set()).add(chapter_num)
-                    # Alias inherits the profile's is_named status
                     name_is_named.setdefault(alias_key, profile.is_named)
 
     return name_to_chapters, name_is_named
 
 
-def _named_pair_cooccurs(
+def _get_cooccurrence_chapters(
     profile_a: CharacterProfile,
     profile_b: CharacterProfile,
     name_to_chapters: dict[str, set[int]],
-) -> bool:
-    """Check if two named profiles co-occur in any chapter.
+) -> list[int]:
+    """Get sorted list of chapters where both profiles appear.
 
-    Only blocks when BOTH profiles have is_named=True. If either is
-    unnamed (a descriptor), co-occurrence does NOT block — this is
-    exactly the case where the extraction LLM failed to recognize an alias.
-
-    Returns:
-        True if both are named and they co-occur in at least one chapter.
+    Used as a SIGNAL (not gate) for the LLM arbiter (MERGE-05).
     """
-    if not profile_a.is_named or not profile_b.is_named:
-        return False
-
-    # Collect chapter sets for all names/aliases of each profile
     chapters_a: set[int] = set()
     for name in [profile_a.name] + list(profile_a.aliases):
         key = name.lower().strip()
@@ -442,126 +453,352 @@ def _named_pair_cooccurs(
         if key in name_to_chapters:
             chapters_b.update(name_to_chapters[key])
 
-    if not chapters_a or not chapters_b:
-        return False
-
-    return bool(chapters_a & chapters_b)
+    shared = chapters_a & chapters_b
+    return sorted(shared)
 
 
-def _consolidate_with_llm(
+# ---------------------------------------------------------------------------
+# Stage 1: Exact name match
+# ---------------------------------------------------------------------------
+
+
+def _merge_by_exact_name(
     profiles: list[CharacterProfile],
-    chapter_characters: dict[int, list[CharacterProfile]],
-    cache_dir: Path,
+    all_canonical_names: set[str],
+    audit: MergeAudit,
 ) -> list[CharacterProfile]:
-    """Use LLM to identify remaining duplicates with co-occurrence guard.
+    """Stage 1: Group and merge profiles with identical names (case-insensitive).
 
-    Skips if <= 5 profiles (too few to warrant LLM call).
-    Validates proposed merges against co-occurrence data.
+    Records MergeDecision for every merge with confidence=1.0.
     """
-    if len(profiles) <= 5:
+    groups: dict[str, list[CharacterProfile]] = {}
+    for profile in profiles:
+        key = profile.name.lower().strip()
+        groups.setdefault(key, []).append(profile)
+
+    merged: list[CharacterProfile] = []
+    for group in groups.values():
+        result = group[0]
+        for other in group[1:]:
+            _record_decision(
+                audit, "exact_name",
+                result.name, other.name,
+                action="merged",
+                reason="Exact name match (case-insensitive)",
+                confidence=1.0,
+            )
+            result = _merge_two_profiles(result, other, all_canonical_names, audit)
+        merged.append(result)
+
+    return merged
+
+
+# ---------------------------------------------------------------------------
+# Stage 2: Candidate pair generation
+# ---------------------------------------------------------------------------
+
+
+def _generate_candidate_pairs(
+    profiles: list[CharacterProfile],
+    all_canonical_names: set[str],
+    audit: MergeAudit,
+) -> list[tuple[int, int, str, float]]:
+    """Stage 2: Generate candidate merge pairs without auto-merging.
+
+    Runs fuzzy match, substring match, alias overlap, and title/name match
+    on all profile pairs. Applies surname-only exclusion to filter.
+
+    Returns:
+        List of (profile_a_idx, profile_b_idx, merge_reason, similarity_score).
+    """
+    candidates: list[tuple[int, int, str, float]] = []
+
+    for i in range(len(profiles)):
+        for j in range(i + 1, len(profiles)):
+            profile_a = profiles[i]
+            profile_b = profiles[j]
+
+            # MERGE-07: Surname-only exclusion blocks candidate generation
+            if _names_share_surname_only(profile_a.name, profile_b.name):
+                _record_decision(
+                    audit, "candidate_generation",
+                    profile_a.name, profile_b.name,
+                    action="rejected",
+                    reason="Surname-only match (different titles/given names)",
+                    confidence=1.0,
+                )
+                continue
+
+            # Check various match signals
+            merge_reasons: list[str] = []
+            best_score = 0.0
+
+            # Fuzzy match on canonical names
+            a_lower = profile_a.name.lower().strip()
+            b_lower = profile_b.name.lower().strip()
+            ratio = SequenceMatcher(None, a_lower, b_lower).ratio()
+            if _names_match_fuzzy(profile_a.name, profile_b.name):
+                merge_reasons.append(f"fuzzy name match ({ratio:.2f})")
+                best_score = max(best_score, ratio)
+
+            # Title/name match on canonical names
+            if _title_name_match(profile_a.name, profile_b.name):
+                merge_reasons.append("title/name equivalence")
+                best_score = max(best_score, 0.8)
+
+            # Substring match
+            if _names_match_substring(profile_a.name, profile_b.name):
+                merge_reasons.append("substring match")
+                best_score = max(best_score, 0.75)
+
+            # Alias overlap
+            if _alias_overlap(profile_a, profile_b):
+                merge_reasons.append("alias overlap")
+                best_score = max(best_score, 0.85)
+
+            # Fuzzy match on aliases
+            if not merge_reasons:
+                all_a = [profile_a.name] + list(profile_a.aliases)
+                all_b = [profile_b.name] + list(profile_b.aliases)
+                for na in all_a:
+                    for nb in all_b:
+                        if _names_match_fuzzy(na, nb):
+                            ratio = SequenceMatcher(
+                                None, na.lower().strip(), nb.lower().strip()
+                            ).ratio()
+                            merge_reasons.append(
+                                f"fuzzy alias match: '{na}' ~ '{nb}' ({ratio:.2f})"
+                            )
+                            best_score = max(best_score, ratio)
+                            break
+                        if _title_name_match(na, nb):
+                            merge_reasons.append(
+                                f"title/name alias match: '{na}' ~ '{nb}'"
+                            )
+                            best_score = max(best_score, 0.8)
+                            break
+                    if merge_reasons:
+                        break
+
+            if merge_reasons:
+                reason_str = "; ".join(merge_reasons)
+                candidates.append((i, j, reason_str, best_score))
+            # No need to record rejected non-matches (too verbose)
+
+    logger.info("Candidate generation: %d candidate pairs from %d profiles",
+                len(candidates), len(profiles))
+    return candidates
+
+
+# ---------------------------------------------------------------------------
+# Stage 3: LLM merge arbiter
+# ---------------------------------------------------------------------------
+
+
+def _arbitrate_with_llm(
+    profiles: list[CharacterProfile],
+    candidate_pairs: list[tuple[int, int, str, float]],
+    chapter_characters: dict[int, list[CharacterProfile]],
+    cache_dir: Path | None,
+    audit: MergeAudit,
+) -> list[CharacterProfile]:
+    """Stage 3: Use LLM to accept/reject candidate merge pairs.
+
+    Builds a batch prompt with all candidate pairs and their context.
+    Uses co-occurrence as a signal (MERGE-05), not a binary gate.
+    Applies confidence threshold (>= 0.7 merge, < 0.7 skip).
+    Uses union-find for transitive merge group resolution.
+
+    Args:
+        profiles: Current profile list.
+        candidate_pairs: From _generate_candidate_pairs.
+        chapter_characters: Original per-chapter data for co-occurrence.
+        cache_dir: Cache directory (None = skip LLM).
+        audit: Audit trail to record decisions.
+
+    Returns:
+        Merged profile list after applying LLM-accepted merges.
+    """
+    if not candidate_pairs:
+        logger.info("LLM arbiter: no candidate pairs, skipping")
+        return profiles
+
+    if cache_dir is None:
+        logger.info("LLM arbiter: no cache_dir, skipping LLM call")
+        # Record all candidates as skipped
+        for idx_a, idx_b, reason, score in candidate_pairs:
+            _record_decision(
+                audit, "llm_arbiter",
+                profiles[idx_a].name, profiles[idx_b].name,
+                action="rejected",
+                reason="LLM call skipped (no cache_dir)",
+                confidence=0.0,
+                details={"merge_reason": reason, "similarity": score},
+            )
         return profiles
 
     # Build co-occurrence map
     name_to_chapters, _ = _build_cooccurrence(chapter_characters)
 
-    # Build numbered summary for LLM
-    lines: list[str] = []
-    for i, p in enumerate(profiles):
-        aliases_str = ", ".join(p.aliases) if p.aliases else "none"
-        lines.append(
-            f"{i}. {p.name} | aliases: {aliases_str} | "
-            f"gender: {p.gender} | age: {p.age_range} | "
-            f"named: {p.is_named} | {p.description}"
+    # Build prompt with candidate pairs
+    pair_lines: list[str] = []
+    for pair_idx, (idx_a, idx_b, reason, score) in enumerate(candidate_pairs):
+        pa = profiles[idx_a]
+        pb = profiles[idx_b]
+
+        # Co-occurrence chapters as signal (MERGE-05)
+        cooccur_chapters = _get_cooccurrence_chapters(pa, pb, name_to_chapters)
+        cooccur_str = (
+            f"Co-occur in chapters: {cooccur_chapters}"
+            if cooccur_chapters
+            else "No co-occurrence detected"
         )
-    summary = "\n".join(lines)
+
+        aliases_a = ", ".join(pa.aliases) if pa.aliases else "none"
+        aliases_b = ", ".join(pb.aliases) if pb.aliases else "none"
+
+        pair_lines.append(
+            f"Pair {pair_idx}:\n"
+            f"  A: {pa.name} | aliases: {aliases_a} | gender: {pa.gender} | "
+            f"age: {pa.age_range} | named: {pa.is_named} | {pa.description}\n"
+            f"  B: {pb.name} | aliases: {aliases_b} | gender: {pb.gender} | "
+            f"age: {pb.age_range} | named: {pb.is_named} | {pb.description}\n"
+            f"  Match reason: {reason}\n"
+            f"  {cooccur_str}"
+        )
+
+    user_content = (
+        f"Evaluate these {len(candidate_pairs)} candidate merge pairs:\n\n"
+        + "\n\n".join(pair_lines)
+    )
 
     # Cache check
-    cache_key = get_cache_key(summary, "consolidation")
+    cache_key = get_cache_key(user_content, "merge_arbiter_v1")
     cached = check_cache(cache_dir, cache_key)
+
     if cached is not None:
-        logger.info("Consolidation: cache hit")
-        result = ConsolidationResult.model_validate(cached)
+        logger.info("LLM arbiter: cache hit")
+        arbiter_result = MergeArbiterResult.model_validate(cached)
     else:
         logger.info(
-            "Consolidation: calling LLM with %d profiles", len(profiles)
+            "LLM arbiter: calling LLM with %d candidate pairs",
+            len(candidate_pairs),
         )
-        result = call_llm_structured(
-            CONSOLIDATION_SYSTEM_PROMPT,
-            summary,
-            ConsolidationResult,
+        arbiter_result = call_llm_structured(
+            MERGE_ARBITER_PROMPT,
+            user_content,
+            MergeArbiterResult,
         )
-        if result is None:
-            logger.warning("Consolidation: LLM call failed, skipping")
+        if arbiter_result is None:
+            logger.warning("LLM arbiter: LLM call failed, skipping all merges")
+            for idx_a, idx_b, reason, score in candidate_pairs:
+                _record_decision(
+                    audit, "llm_arbiter",
+                    profiles[idx_a].name, profiles[idx_b].name,
+                    action="rejected",
+                    reason="LLM call failed",
+                    confidence=0.0,
+                    details={"merge_reason": reason, "similarity": score},
+                )
             return profiles
-        write_cache(cache_dir, cache_key, result.model_dump())
+        write_cache(cache_dir, cache_key, arbiter_result.model_dump())
 
-    if not result.groups:
-        logger.info("Consolidation: no duplicates found by LLM")
-        return profiles
+    # Process LLM decisions
+    accepted_pairs: list[tuple[int, int]] = []
 
-    # Validate and apply merges
-    used_indices: set[int] = set()
-    valid_groups: list[list[int]] = []
-
-    for group in result.groups:
-        # Validate indices
-        if any(idx < 0 or idx >= len(profiles) for idx in group.indices):
+    for llm_decision in arbiter_result.decisions:
+        pair_idx = llm_decision.pair_index
+        if pair_idx < 0 or pair_idx >= len(candidate_pairs):
             logger.warning(
-                "Consolidation: rejecting group with out-of-range indices: %s",
-                group.indices,
+                "LLM arbiter: ignoring out-of-range pair_index %d", pair_idx
             )
             continue
 
-        if any(idx in used_indices for idx in group.indices):
-            logger.warning(
-                "Consolidation: rejecting group with already-used indices: %s",
-                group.indices,
+        idx_a, idx_b, reason, score = candidate_pairs[pair_idx]
+
+        if llm_decision.decision == "merge" and llm_decision.confidence >= LLM_CONFIDENCE_THRESHOLD:
+            _record_decision(
+                audit, "llm_arbiter",
+                profiles[idx_a].name, profiles[idx_b].name,
+                action="merged",
+                reason=llm_decision.reasoning,
+                confidence=llm_decision.confidence,
+                details={
+                    "merge_reason": reason,
+                    "similarity": score,
+                    "llm_decision": llm_decision.decision,
+                },
             )
-            continue
-
-        # Co-occurrence check: reject if any named+named pair co-occurs
-        rejected = False
-        group_profiles = [profiles[idx] for idx in group.indices]
-        for a_idx in range(len(group_profiles)):
-            for b_idx in range(a_idx + 1, len(group_profiles)):
-                if _named_pair_cooccurs(
-                    group_profiles[a_idx],
-                    group_profiles[b_idx],
-                    name_to_chapters,
-                ):
-                    logger.warning(
-                        "Consolidation: rejecting group %s — "
-                        "named pair '%s' and '%s' co-occur",
-                        group.indices,
-                        group_profiles[a_idx].name,
-                        group_profiles[b_idx].name,
-                    )
-                    rejected = True
-                    break
-            if rejected:
-                break
-
-        if not rejected:
-            valid_groups.append(list(group.indices))
-            used_indices.update(group.indices)
-            logger.info(
-                "Consolidation: merging group %s (%s)",
-                group.indices,
-                group.reasoning,
+            accepted_pairs.append((idx_a, idx_b))
+        else:
+            reject_reason = llm_decision.reasoning
+            if llm_decision.decision == "merge" and llm_decision.confidence < LLM_CONFIDENCE_THRESHOLD:
+                reject_reason = (
+                    f"Below confidence threshold ({llm_decision.confidence:.2f} < "
+                    f"{LLM_CONFIDENCE_THRESHOLD}): {llm_decision.reasoning}"
+                )
+            _record_decision(
+                audit, "llm_arbiter",
+                profiles[idx_a].name, profiles[idx_b].name,
+                action="rejected",
+                reason=reject_reason,
+                confidence=llm_decision.confidence,
+                details={
+                    "merge_reason": reason,
+                    "similarity": score,
+                    "llm_decision": llm_decision.decision,
+                },
             )
 
-    if not valid_groups:
-        logger.info("Consolidation: no valid groups after validation")
+    if not accepted_pairs:
+        logger.info("LLM arbiter: no merges accepted")
         return profiles
+
+    # Union-find for transitive merge groups
+    parent: dict[int, int] = {}
+
+    def find(x: int) -> int:
+        while parent.get(x, x) != x:
+            parent[x] = parent.get(parent[x], parent[x])
+            x = parent[x]
+        return x
+
+    def union(a: int, b: int) -> None:
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[ra] = rb
+
+    for idx_a, idx_b in accepted_pairs:
+        union(idx_a, idx_b)
+
+    # Build merge groups
+    groups: dict[int, list[int]] = {}
+    all_involved = set()
+    for idx_a, idx_b in accepted_pairs:
+        all_involved.add(idx_a)
+        all_involved.add(idx_b)
+
+    for idx in all_involved:
+        root = find(idx)
+        groups.setdefault(root, []).append(idx)
+
+    # Deduplicate and sort each group
+    for root in groups:
+        groups[root] = sorted(set(groups[root]))
+
+    # Build canonical names set for cross-name exclusion
+    all_canonical = {p.name.lower().strip() for p in profiles}
 
     # Apply merges
     merged_indices: set[int] = set()
     result_profiles: list[CharacterProfile] = []
 
-    for group_indices in valid_groups:
+    for group_indices in groups.values():
         primary = profiles[group_indices[0]]
         for idx in group_indices[1:]:
-            primary = _merge_two_profiles(primary, profiles[idx])
+            primary = _merge_two_profiles(
+                primary, profiles[idx], all_canonical, audit
+            )
         result_profiles.append(primary)
         merged_indices.update(group_indices)
 
@@ -571,11 +808,64 @@ def _consolidate_with_llm(
             result_profiles.append(p)
 
     logger.info(
-        "Consolidation: %d profiles -> %d after LLM merge",
-        len(profiles),
-        len(result_profiles),
+        "LLM arbiter: %d profiles -> %d after merge (%d pairs accepted)",
+        len(profiles), len(result_profiles), len(accepted_pairs),
     )
     return result_profiles
+
+
+# ---------------------------------------------------------------------------
+# Stage 4: Post-merge validation (MERGE-02)
+# ---------------------------------------------------------------------------
+
+
+def _validate_merged_profiles(
+    profiles: list[CharacterProfile],
+    audit: MergeAudit,
+) -> None:
+    """Validate merged profiles and append warnings to audit.
+
+    Checks each profile for:
+    - >5 aliases (suspicious over-merging)
+    - >50 traits (should be capped, but validate)
+    - alias matching another profile's canonical name (cross-contamination)
+
+    Warn-and-continue: never blocks the pipeline.
+    """
+    canonical_names = {p.name.lower().strip() for p in profiles}
+
+    for profile in profiles:
+        # Check alias count
+        if len(profile.aliases) > 5:
+            w = (
+                f"Validation: '{profile.name}' has {len(profile.aliases)} "
+                f"aliases (threshold: 5)"
+            )
+            audit.warnings.append(w)
+            logger.warning(w)
+
+        # Check trait count
+        if len(profile.personality_traits) > 50:
+            w = (
+                f"Validation: '{profile.name}' has "
+                f"{len(profile.personality_traits)} traits (threshold: 50)"
+            )
+            audit.warnings.append(w)
+            logger.warning(w)
+
+        # Check alias-canonical cross-contamination
+        for alias in profile.aliases:
+            alias_lower = alias.lower().strip()
+            if (
+                alias_lower in canonical_names
+                and alias_lower != profile.name.lower().strip()
+            ):
+                w = (
+                    f"Validation: '{profile.name}' has alias '{alias}' "
+                    f"matching another character's canonical name"
+                )
+                audit.warnings.append(w)
+                logger.warning(w)
 
 
 # ---------------------------------------------------------------------------
@@ -586,111 +876,83 @@ def _consolidate_with_llm(
 def merge_characters(
     chapter_characters: dict[int, list[CharacterProfile]],
     cache_dir: Path | None = None,
-) -> list[CharacterProfile]:
+    book_title: str = "",
+) -> tuple[list[CharacterProfile], MergeAudit]:
     """Merge per-chapter character lists into a deduplicated registry.
 
-    Multi-stage merge:
-    1. Exact name match (case-insensitive)
-    2. Fuzzy name match (SequenceMatcher + title/name matching)
-    3. Alias/substring match (with surname-only exclusion)
-    4. LLM consolidation with co-occurrence guard
+    4-stage pipeline:
+    1. Exact name match (case-insensitive, always correct)
+    2. Candidate pair generation (fuzzy/substring/alias — no auto-merge)
+    3. LLM merge arbiter (accepts/rejects candidates with confidence)
+    4. Post-merge validation (flags anomalies, warn-and-continue)
 
     Args:
         chapter_characters: Dict mapping chapter_num -> character list.
-        cache_dir: Optional cache directory for LLM consolidation caching.
+        cache_dir: Optional cache directory for LLM arbiter caching.
+        book_title: Book title for audit metadata.
 
     Returns:
-        Sorted list of deduplicated CharacterProfile objects.
+        Tuple of (sorted list of deduplicated CharacterProfile, MergeAudit).
     """
+    # Initialize audit trail
+    audit = MergeAudit(
+        book_title=book_title,
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        total_raw_profiles=0,
+        total_merged_profiles=0,
+    )
+
     # Collect all profiles into a flat list
     all_profiles: list[CharacterProfile] = []
     for chapter_num in sorted(chapter_characters.keys()):
         all_profiles.extend(chapter_characters[chapter_num])
 
     if not all_profiles:
-        return []
+        return [], audit
 
+    audit.total_raw_profiles = len(all_profiles)
     logger.info("Merging %d raw character entries", len(all_profiles))
 
+    # Build canonical name set for cross-name exclusion
+    all_canonical_names = {p.name.lower().strip() for p in all_profiles}
+
     # Stage 1: Exact name match
-    profiles = _merge_by_exact_name(all_profiles)
+    profiles = _merge_by_exact_name(all_profiles, all_canonical_names, audit)
     logger.info("After exact-name merge: %d profiles", len(profiles))
 
-    # Stage 2: Fuzzy name match
-    profiles = _merge_by_fuzzy(profiles)
-    logger.info("After fuzzy merge: %d profiles", len(profiles))
+    # Update canonical names after exact merge
+    all_canonical_names = {p.name.lower().strip() for p in profiles}
 
-    # Stage 3: Alias/substring match
-    profiles = _merge_by_substring_and_alias(profiles)
-    logger.info("After substring/alias merge: %d profiles", len(profiles))
+    # Stage 2: Candidate pair generation (no auto-merge)
+    candidate_pairs = _generate_candidate_pairs(profiles, all_canonical_names, audit)
+    logger.info("Candidate pairs generated: %d", len(candidate_pairs))
 
-    # Stage 4: LLM consolidation
+    # Stage 3: LLM merge arbiter
     if cache_dir is not None:
-        profiles = _consolidate_with_llm(profiles, chapter_characters, cache_dir)
+        profiles = _arbitrate_with_llm(
+            profiles, candidate_pairs, chapter_characters, cache_dir, audit
+        )
+    else:
+        # No cache_dir = no LLM call, record candidates as skipped
+        for idx_a, idx_b, reason, score in candidate_pairs:
+            _record_decision(
+                audit, "llm_arbiter",
+                profiles[idx_a].name, profiles[idx_b].name,
+                action="rejected",
+                reason="LLM call skipped (no cache_dir)",
+                confidence=0.0,
+                details={"merge_reason": reason, "similarity": score},
+            )
+
+    # Stage 4: Post-merge validation
+    _validate_merged_profiles(profiles, audit)
 
     # Sort: named first, then alphabetically
     profiles.sort(key=lambda p: (not p.is_named, p.name.lower()))
 
+    # Finalize audit
+    audit.total_merged_profiles = len(profiles)
+    audit.final_profiles = [p.name for p in profiles]
+
     logger.info("Final registry: %d characters", len(profiles))
-    return profiles
-
-
-def _merge_by_exact_name(profiles: list[CharacterProfile]) -> list[CharacterProfile]:
-    """Stage 1: Group and merge profiles with identical names (case-insensitive)."""
-    groups: dict[str, list[CharacterProfile]] = {}
-    for profile in profiles:
-        key = profile.name.lower().strip()
-        groups.setdefault(key, []).append(profile)
-
-    merged: list[CharacterProfile] = []
-    for group in groups.values():
-        result = group[0]
-        for other in group[1:]:
-            result = _merge_two_profiles(result, other)
-        merged.append(result)
-
-    return merged
-
-
-def _merge_by_substring_and_alias(
-    profiles: list[CharacterProfile],
-) -> list[CharacterProfile]:
-    """Stage 2: Merge profiles by substring matching and alias overlap.
-
-    Skips merges where names share only a surname (likely different characters).
-    """
-    merged_indices: set[int] = set()
-    result: list[CharacterProfile] = []
-
-    for i in range(len(profiles)):
-        if i in merged_indices:
-            continue
-
-        current = profiles[i]
-
-        for j in range(i + 1, len(profiles)):
-            if j in merged_indices:
-                continue
-
-            candidate = profiles[j]
-
-            # Check for surname-only match (PREVENT merge)
-            if _names_share_surname_only(current.name, candidate.name):
-                continue
-
-            # Check substring match or alias overlap
-            should_merge = (
-                _names_match_substring(current.name, candidate.name)
-                or _alias_overlap(current, candidate)
-            )
-
-            if should_merge:
-                current = _merge_two_profiles(current, candidate)
-                merged_indices.add(j)
-                logger.debug(
-                    "Merged '%s' into '%s'", candidate.name, current.name
-                )
-
-        result.append(current)
-
-    return result
+    return profiles, audit
