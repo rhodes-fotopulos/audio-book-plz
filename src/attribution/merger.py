@@ -563,6 +563,27 @@ def _generate_candidate_pairs(
                 merge_reasons.append("alias overlap")
                 best_score = max(best_score, 0.85)
 
+            # Alias-to-canonical substring match
+            # e.g. alias "Catherine Bennet" contains canonical "Catherine"
+            if not merge_reasons:
+                a_name_l = profile_a.name.lower().strip()
+                b_name_l = profile_b.name.lower().strip()
+                for alias in profile_b.aliases:
+                    if _names_match_substring(a_name_l, alias.lower().strip()):
+                        merge_reasons.append(
+                            f"alias substring: '{profile_a.name}' in alias '{alias}'"
+                        )
+                        best_score = max(best_score, 0.7)
+                        break
+                if not merge_reasons:
+                    for alias in profile_a.aliases:
+                        if _names_match_substring(b_name_l, alias.lower().strip()):
+                            merge_reasons.append(
+                                f"alias substring: '{profile_b.name}' in alias '{alias}'"
+                            )
+                            best_score = max(best_score, 0.7)
+                            break
+
             # Fuzzy match on aliases
             if not merge_reasons:
                 all_a = [profile_a.name] + list(profile_a.aliases)
@@ -880,6 +901,89 @@ def _validate_merged_profiles(
 
 
 # ---------------------------------------------------------------------------
+# Stage 3b: Orphan rescue
+# ---------------------------------------------------------------------------
+
+MAX_ORPHAN_ALIASES = 1
+"""Profiles with at most this many aliases are considered orphan candidates."""
+
+
+def _rescue_orphan_profiles(
+    profiles: list[CharacterProfile],
+    chapter_characters: dict[int, list[CharacterProfile]],
+    cache_dir: Path | None,
+    audit: MergeAudit,
+) -> list[CharacterProfile]:
+    """Rescue orphan profiles that may be alternate names for other characters.
+
+    An "orphan" is a named, single-word canonical name profile with few aliases
+    that didn't merge in Stage 3.  We pair each orphan against same-gender
+    named profiles and ask the LLM arbiter to decide.
+
+    This catches cases like "Catherine" (Kitty Bennet's given name) that share
+    no aliases or fuzzy match with the primary profile.
+    """
+    # Identify orphans: single-word name, few aliases, named
+    orphan_indices: list[int] = []
+    for i, p in enumerate(profiles):
+        if (
+            p.is_named
+            and len(p.name.split()) == 1
+            and len(p.aliases) <= MAX_ORPHAN_ALIASES
+        ):
+            orphan_indices.append(i)
+
+    if not orphan_indices:
+        logger.info("Orphan rescue: no orphan profiles found")
+        return profiles
+
+    # Generate candidate pairs: orphan vs all other named profiles of same gender
+    candidate_pairs: list[tuple[int, int, str, float]] = []
+    for oi in orphan_indices:
+        orphan = profiles[oi]
+        for j, other in enumerate(profiles):
+            if j == oi:
+                continue
+            if not other.is_named:
+                continue
+            if orphan.gender != other.gender:
+                continue
+            # Skip if this pair was already evaluated in Stage 3
+            # (they would have been generated as candidates by heuristics)
+            # We only want genuinely new pairs
+            already_evaluated = False
+            for stage in ("llm_arbiter",):
+                for e in audit.stages.get(stage, []):
+                    if (
+                        (e.profile_a == orphan.name and e.profile_b == other.name)
+                        or (e.profile_a == other.name and e.profile_b == orphan.name)
+                    ):
+                        already_evaluated = True
+                        break
+                if already_evaluated:
+                    break
+            if already_evaluated:
+                continue
+            candidate_pairs.append(
+                (oi, j, "orphan rescue (single-word name, few aliases)", 0.5)
+            )
+
+    if not candidate_pairs:
+        logger.info("Orphan rescue: no new candidate pairs")
+        return profiles
+
+    logger.info(
+        "Orphan rescue: %d candidate pairs for %d orphan profiles",
+        len(candidate_pairs), len(orphan_indices),
+    )
+
+    profiles = _arbitrate_with_llm(
+        profiles, candidate_pairs, chapter_characters, cache_dir, audit
+    )
+    return profiles
+
+
+# ---------------------------------------------------------------------------
 # Main merge pipeline
 # ---------------------------------------------------------------------------
 
@@ -954,6 +1058,15 @@ def merge_characters(
                 confidence=0.0,
                 details={"merge_reason": reason, "similarity": score},
             )
+
+    # Stage 3b: Orphan rescue — single-name profiles with no aliases that
+    # didn't merge may be alternate names for another character (e.g.
+    # "Catherine" for Kitty Bennet).  Pair them against same-gender named
+    # profiles and ask the LLM.
+    if cache_dir is not None:
+        profiles = _rescue_orphan_profiles(
+            profiles, chapter_characters, cache_dir, audit
+        )
 
     # Stage 4: Post-merge validation
     _validate_merged_profiles(profiles, audit)
