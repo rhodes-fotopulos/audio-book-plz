@@ -1,9 +1,9 @@
 """On-demand LibriTTS-R audio downloader.
 
 Downloads only the speaker reference clips needed for a voice map,
-avoiding the full 80GB+ dataset download.  Streams the HuggingFace
-dataset, filters by speaker ID, and saves one reference clip per
-speaker.
+avoiding the full 80GB+ dataset download.  Uses HuggingFace Parquet API
+with predicate pushdown to fetch only rows matching needed speaker IDs,
+falling back to streaming if the fast path fails.
 
 Downloaded audio is cached at ``~/.local/share/libritts-r/audio/``
 so subsequent runs skip already-downloaded speakers.
@@ -14,6 +14,7 @@ from __future__ import annotations
 import io
 import json
 import logging
+import os
 import tarfile
 import wave
 from collections import defaultdict
@@ -22,6 +23,24 @@ from pathlib import Path
 import httpx
 
 logger = logging.getLogger(__name__)
+
+
+def _load_dotenv() -> None:
+    """Load .env file from project root if HF_TOKEN not already set."""
+    if os.environ.get("HF_TOKEN"):
+        return
+    env_path = Path(__file__).resolve().parents[2] / ".env"
+    if not env_path.is_file():
+        return
+    for line in env_path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key, value = key.strip(), value.strip()
+        if key and key not in os.environ:
+            os.environ[key] = value
+
 
 # Default cache location for downloaded LibriTTS-R audio clips
 LIBRITTS_R_CACHE = Path.home() / ".local" / "share" / "libritts-r" / "audio"
@@ -119,23 +138,138 @@ def _wav_duration_from_bytes(wav_bytes: bytes) -> float:
     return len(wav_bytes) / (24000 * 2)
 
 
-def _download_speakers_from_hf_split(
+def _pick_best_clip(
+    best_clips: dict[str, tuple[float, bytes, str, str]],
+    sid: str,
+    wav_bytes: bytes,
+    filename: str,
+    transcript: str,
+) -> None:
+    """Update best_clips dict if this clip is a better candidate for sid."""
+    duration = _wav_duration_from_bytes(wav_bytes)
+
+    if duration < _MIN_DURATION_S or duration > _MAX_DURATION_S:
+        # Outside ideal range — keep only if we have nothing for this speaker
+        if sid not in best_clips:
+            score = -abs(duration - _TARGET_DURATION_S)
+            best_clips[sid] = (score, wav_bytes, filename, transcript)
+        return
+
+    score = 1.0 / (1.0 + abs(duration - _TARGET_DURATION_S))
+    if sid not in best_clips or score > best_clips[sid][0]:
+        best_clips[sid] = (score, wav_bytes, filename, transcript)
+
+
+def _save_best_clips(
+    best_clips: dict[str, tuple[float, bytes, str, str]],
+    cache_dir: Path,
+    split_name: str,
+) -> set[str]:
+    """Save best clips to disk and return set of saved speaker IDs."""
+    saved: set[str] = set()
+    for sid, (_, wav_bytes, filename, transcript) in best_clips.items():
+        out_dir = cache_dir / split_name / sid
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = out_dir / filename
+        out_path.write_bytes(wav_bytes)
+        if transcript:
+            txt_path = out_path.with_suffix(".normalized.txt")
+            txt_path.write_text(transcript, encoding="utf-8")
+        saved.add(sid)
+    return saved
+
+
+def _download_speakers_parquet(
     hf_split: str,
     speaker_ids: set[str],
     cache_dir: Path,
     split_name: str,
 ) -> set[str]:
-    """Stream a HuggingFace dataset split and save clips for needed speakers.
+    """Fast speaker download using Parquet predicate pushdown.
 
-    For each speaker, saves the clip closest to the target duration
-    (12.5s) to get the best voice cloning reference.
+    Fetches parquet file URLs from the HuggingFace API, then uses
+    pyarrow to read only rows matching our speaker IDs.  This avoids
+    scanning the entire dataset and is orders of magnitude faster
+    than streaming for large splits like train-other-500.
+    """
+    import pyarrow.parquet as pq
+    from fsspec.implementations.http import HTTPFileSystem
 
-    Returns:
-        Set of speaker IDs for which clips were saved.
+    from rich import print as rprint
+
+    hf_token = os.environ.get("HF_TOKEN")
+    headers = {"Authorization": f"Bearer {hf_token}"} if hf_token else {}
+
+    # Get parquet file URLs for this split
+    api_url = (
+        f"https://huggingface.co/api/datasets/"
+        f"{_HF_DATASET}/parquet/all/{hf_split}"
+    )
+    resp = httpx.get(
+        api_url, headers=headers, follow_redirects=True, timeout=30
+    )
+    resp.raise_for_status()
+    parquet_urls = resp.json()
+
+    if not isinstance(parquet_urls, list) or not parquet_urls:
+        raise ValueError(f"Unexpected parquet API response: {parquet_urls!r}")
+
+    logger.info(
+        "Got %d parquet files for %s, filtering for %d speakers",
+        len(parquet_urls), hf_split, len(speaker_ids),
+    )
+
+    # Build int filter set (speaker_id is int in the dataset)
+    speaker_id_ints = [int(s) for s in speaker_ids]
+
+    fs = HTTPFileSystem(headers=headers)
+    best_clips: dict[str, tuple[float, bytes, str, str]] = {}
+
+    for url in parquet_urls:
+        try:
+            pf = pq.ParquetFile(fs.open(url))
+            table = pf.read(
+                filters=[("speaker_id", "in", speaker_id_ints)],
+                columns=["speaker_id", "audio", "text_normalized"],
+            )
+        except Exception as exc:
+            logger.warning("Failed to read parquet file %s: %s", url, exc)
+            continue
+
+        for i in range(len(table)):
+            sid = str(table.column("speaker_id")[i].as_py())
+            audio_data = table.column("audio")[i].as_py()
+            transcript = table.column("text_normalized")[i].as_py() or ""
+
+            # Audio column is a struct {bytes: binary, path: string}
+            if isinstance(audio_data, dict):
+                wav_bytes = audio_data.get("bytes")
+                filename = audio_data.get("path", f"{sid}_clip.wav")
+            else:
+                continue
+
+            if not wav_bytes:
+                continue
+
+            _pick_best_clip(best_clips, sid, wav_bytes, filename, transcript)
+
+    saved = _save_best_clips(best_clips, cache_dir, split_name)
+    logger.info("Saved %d clips from %s via parquet", len(saved), hf_split)
+    return saved
+
+
+def _download_speakers_streaming(
+    hf_split: str,
+    speaker_ids: set[str],
+    cache_dir: Path,
+    split_name: str,
+) -> set[str]:
+    """Fallback: stream a HuggingFace dataset split row by row.
+
+    Only used when the fast parquet path fails.
     """
     from datasets import Audio, load_dataset
 
-    from rich import print as rprint
     from rich.progress import (
         BarColumn,
         MofNCompleteColumn,
@@ -148,13 +282,11 @@ def _download_speakers_from_hf_split(
     ds = load_dataset(
         _HF_DATASET, "all", split=hf_split, streaming=True
     )
-    # Disable audio decoding to get raw bytes (avoids torchcodec dep)
     ds = ds.cast_column("audio", Audio(decode=False))
 
-    # Track best candidate per speaker: (duration_score, wav_bytes, filename, transcript)
     best_clips: dict[str, tuple[float, bytes, str, str]] = {}
     remaining = set(speaker_ids)
-    rows_scanned = 0
+    rows_after_complete = 0
 
     with Progress(
         SpinnerColumn(),
@@ -171,10 +303,14 @@ def _download_speakers_from_hf_split(
         found_count = 0
 
         for row in ds:
-            rows_scanned += 1
             sid = row["speaker_id"]
 
             if sid not in speaker_ids:
+                # Once all found, count rows to allow finding better clips
+                if not remaining:
+                    rows_after_complete += 1
+                    if rows_after_complete > 100:
+                        break
                 continue
 
             audio = row["audio"]
@@ -184,56 +320,54 @@ def _download_speakers_from_hf_split(
 
             filename = audio.get("path", f"{sid}_clip.wav")
             transcript = row.get("text_normalized", "")
-            duration = _wav_duration_from_bytes(wav_bytes)
 
-            # Skip clips outside usable range
-            if duration < _MIN_DURATION_S or duration > _MAX_DURATION_S:
-                # Still save if we have nothing for this speaker
-                if sid not in best_clips:
-                    score = -abs(duration - _TARGET_DURATION_S)
-                    best_clips[sid] = (score, wav_bytes, filename, transcript)
-                    if sid in remaining:
-                        remaining.discard(sid)
-                        found_count += 1
-                        progress.update(task, completed=found_count)
-                continue
+            was_new = sid in remaining
+            _pick_best_clip(best_clips, sid, wav_bytes, filename, transcript)
 
-            # Score: closer to target = better
-            score = 1.0 / (1.0 + abs(duration - _TARGET_DURATION_S))
+            if was_new and sid in best_clips:
+                remaining.discard(sid)
+                found_count += 1
+                progress.update(task, completed=found_count)
 
-            if sid not in best_clips or score > best_clips[sid][0]:
-                best_clips[sid] = (score, wav_bytes, filename, transcript)
-                if sid in remaining:
-                    remaining.discard(sid)
-                    found_count += 1
-                    progress.update(task, completed=found_count)
+            if not remaining:
+                rows_after_complete += 1
+                if rows_after_complete > 100:
+                    break
 
-            # Stop scanning once all speakers found AND we've checked
-            # a few more rows for better clips
-            if not remaining and rows_scanned > 100:
-                break
-
-    # Save the best clips to disk
-    saved: set[str] = set()
-    for sid, (_, wav_bytes, filename, transcript) in best_clips.items():
-        # Save to cache_dir/{split_name}/{speaker_id}/{filename}
-        out_dir = cache_dir / split_name / sid
-        out_dir.mkdir(parents=True, exist_ok=True)
-        out_path = out_dir / filename
-        out_path.write_bytes(wav_bytes)
-
-        # Also save the transcript
-        if transcript:
-            txt_path = out_path.with_suffix(".normalized.txt")
-            txt_path.write_text(transcript, encoding="utf-8")
-
-        saved.add(sid)
-
-    logger.info(
-        "Saved %d clips from %s (scanned %d rows)",
-        len(saved), hf_split, rows_scanned,
-    )
+    saved = _save_best_clips(best_clips, cache_dir, split_name)
+    logger.info("Saved %d clips from %s via streaming", len(saved), hf_split)
     return saved
+
+
+def _download_speakers_from_hf_split(
+    hf_split: str,
+    speaker_ids: set[str],
+    cache_dir: Path,
+    split_name: str,
+) -> set[str]:
+    """Download clips for needed speakers from a HuggingFace dataset split.
+
+    Tries the fast parquet predicate-pushdown approach first, falling
+    back to row-by-row streaming if that fails.
+    """
+    from rich import print as rprint
+
+    try:
+        return _download_speakers_parquet(
+            hf_split, speaker_ids, cache_dir, split_name,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Fast parquet download failed for %s, falling back to streaming: %s",
+            hf_split, exc,
+        )
+        rprint(
+            f"  [yellow]Parquet fast-path failed ({exc}), "
+            f"falling back to streaming...[/yellow]"
+        )
+        return _download_speakers_streaming(
+            hf_split, speaker_ids, cache_dir, split_name,
+        )
 
 
 def download_voice_clips(
@@ -254,6 +388,8 @@ def download_voice_clips(
         Path to the audio cache directory (usable as ``libritts_audio_dir``).
     """
     from rich import print as rprint
+
+    _load_dotenv()
 
     if cache_dir is None:
         cache_dir = LIBRITTS_R_CACHE

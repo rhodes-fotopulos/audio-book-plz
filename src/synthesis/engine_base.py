@@ -149,41 +149,38 @@ class TTSEngineBase(ABC):
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
         tmp_path = output_path + ".tmp"
-        sf.write(tmp_path, audio.audio, audio.sample_rate)
+        sf.write(tmp_path, audio.audio, audio.sample_rate, format="WAV")
         os.rename(tmp_path, output_path)
         return True
 
     def ensure_ollama_unloaded(self) -> None:
         """Unload any Ollama models to free GPU memory before TTS.
 
-        Calls the existing ``unload_model()`` helper from the attribution
-        package and additionally checks ``ollama.list()`` for any models
-        still resident.  Connection errors are silently ignored (Ollama
-        may not be running).
+        Uses the Ollama REST API to list running models and evict each
+        one with ``keep_alive=0``.  Connection errors are silently
+        ignored (Ollama may not be running).
         """
-        # Use the existing unload helper from Phase 2
+        import httpx
+
+        base = "http://localhost:11434"
         try:
-            from src.attribution.llm_client import unload_model
-
-            unload_model()
-            logger.info("Ollama default model unload requested")
+            resp = httpx.get(f"{base}/api/ps", timeout=5)
+            resp.raise_for_status()
+            running = resp.json().get("models", [])
         except Exception as exc:
-            logger.debug("Could not call unload_model: %s", exc)
+            logger.debug("Ollama not reachable: %s", exc)
+            return
 
-        # Also check for any other loaded models via the Ollama API
-        try:
-            import ollama
-
-            running = ollama.list()
-            models = getattr(running, "models", None) or []
-            for m in models:
-                name = getattr(m, "name", None) or getattr(m, "model", str(m))
-                try:
-                    from src.attribution.llm_client import unload_model as _unload
-
-                    _unload(model=str(name))
-                    logger.info("Unloaded Ollama model: %s", name)
-                except Exception:
-                    pass
-        except Exception as exc:
-            logger.debug("Ollama not reachable or list failed: %s", exc)
+        for m in running:
+            name = m.get("name") or m.get("model", "")
+            if not name:
+                continue
+            try:
+                httpx.post(
+                    f"{base}/api/generate",
+                    json={"model": name, "keep_alive": 0},
+                    timeout=10,
+                )
+                logger.info("Unloaded Ollama model: %s", name)
+            except Exception as exc:
+                logger.debug("Could not unload %s: %s", name, exc)
