@@ -180,6 +180,16 @@ def run_attribute(
             opinionated=opinionated,
         )
 
+    # --- Disambiguation pass (Stage 0.5) ---
+    rprint("[bold cyan]Disambiguating character names...[/bold cyan]")
+    from src.attribution.disambiguator import disambiguate_characters
+    chapter_characters, disambig_audit = disambiguate_characters(
+        chapter_characters, segments, cache_dir
+    )
+    if disambig_audit.splits_applied > 0 or disambig_audit.name_changes_found > 0:
+        rprint(f"[dim]Disambiguation: {disambig_audit.splits_applied} splits, "
+               f"{disambig_audit.name_changes_found} name changes[/dim]")
+
     # --- Merge pass ---
     rprint("[bold cyan]Merging character profiles...[/bold cyan]")
     characters, merge_audit = merge_characters(
@@ -216,6 +226,12 @@ def run_attribute(
             indent=2,
             ensure_ascii=False,
         )
+
+    # --- Write disambiguation_audit.json ---
+    disambig_audit_path = book_dir / "disambiguation_audit.json"
+    with open(disambig_audit_path, "w", encoding="utf-8") as f:
+        json.dump(disambig_audit.model_dump(), f, indent=2, ensure_ascii=False)
+    rprint(f"[dim]Disambiguation audit: {disambig_audit_path}[/dim]")
 
     # --- Write merge_audit.json ---
     audit_path = book_dir / "merge_audit.json"

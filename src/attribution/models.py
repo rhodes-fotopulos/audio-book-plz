@@ -332,3 +332,88 @@ class MergeAudit(BaseModel):
 
     final_profiles: list[str] = []
     """Canonical names of all profiles in the final registry."""
+
+
+# ---------------------------------------------------------------------------
+# Disambiguation models (Stage 0.5 — pre-merge name disambiguation)
+# ---------------------------------------------------------------------------
+
+
+class DisambiguatedIdentity(BaseModel):
+    """A resolved identity for an ambiguous name in specific chapters."""
+
+    resolved_name: str
+    """Disambiguated name (e.g. "Jane Bennet")."""
+
+    original_name: str
+    """The ambiguous name (e.g. "Miss Bennet")."""
+
+    chapter_numbers: list[int]
+    """Chapters where this name refers to this identity."""
+
+    reasoning: str
+    """Explanation of why this identity was assigned."""
+
+
+class NameChangeLink(BaseModel):
+    """A detected name change for a character (e.g. marriage)."""
+
+    earlier_name: str
+    """Name used before the change (e.g. "Elizabeth Bennet")."""
+
+    later_name: str
+    """Name used after the change (e.g. "Mrs. Darcy")."""
+
+    transition_chapter: int
+    """Approximate chapter where the name change occurs."""
+
+    reasoning: str
+    """Explanation of the name change."""
+
+
+class DisambiguationResult(BaseModel):
+    """LLM response schema for per-group name disambiguation."""
+
+    identities: list[DisambiguatedIdentity]
+    """Resolved identities for the ambiguous name."""
+
+    name_changes: list[NameChangeLink]
+    """Any name changes detected for characters in this group."""
+
+
+class DisambiguationDecision(BaseModel):
+    """Record of a single disambiguation decision."""
+
+    original_name: str
+    """The name that was analyzed."""
+
+    action: str
+    """Decision taken: "split", "name_change", or "no_change"."""
+
+    details: str
+    """Human-readable explanation."""
+
+    confidence: float
+    """Confidence score 0.0-1.0."""
+
+
+class DisambiguationAudit(BaseModel):
+    """Complete audit trail for a disambiguation pass."""
+
+    total_names_analyzed: int
+    """Number of unique names examined."""
+
+    ambiguous_groups_found: int
+    """Number of groups flagged as potentially ambiguous."""
+
+    splits_applied: int
+    """Number of name splits applied."""
+
+    name_changes_found: int
+    """Number of name-change links detected."""
+
+    decisions: list[DisambiguationDecision] = []
+    """All decisions made during disambiguation."""
+
+    warnings: list[str] = []
+    """Any warnings generated during the pass."""
